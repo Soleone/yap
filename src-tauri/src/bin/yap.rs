@@ -15,6 +15,9 @@ const USAGE: &str = "usage:
   yap --speed 1.2 ...   read faster or slower; the model's closest speed is used
   yap --app Firefox --title \"Docs\" --url https://... ...
                         where the text came from, kept with the read
+  yap --source-env PLUCK ...
+                        the same from PLUCK_APP, PLUCK_TITLE and PLUCK_URL, for
+                        callers that pass them in the environment
   yap --stop            stop what plays
   yap --pause           pause, or resume
   yap                   open the window
@@ -49,6 +52,15 @@ fn run() -> Result<(), String> {
       }
       "--app" | "--title" | "--url" => {
         source[&arg[2..]] = args.next().ok_or(format!("{arg} needs a value"))?.into();
+      }
+      // Values in the environment never pass through a shell, so a quote in a window title can't break the command.
+      "--source-env" => {
+        let prefix = args.next().ok_or("--source-env needs a prefix, like PLUCK")?;
+        for field in ["app", "title", "url"] {
+          if let Ok(value) = std::env::var(format!("{prefix}_{}", field.to_uppercase())) {
+            source[field] = value.into();
+          }
+        }
       }
       "-h" | "--help" => {
         println!("{USAGE}");

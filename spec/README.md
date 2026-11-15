@@ -21,20 +21,21 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 
 ## Speaking
 
-| Rule            | When                                           | Then                                                                                                  |
-| --------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `speak.args`    | `yap "text"`                                   | The text is read aloud; the command returns once it finished playing                                  |
-| `speak.stdin`   | `yap` with text on stdin and no text arguments | Stdin is read aloud the same way                                                                      |
-| `speak.dashes`  | `yap -- "-5 degrees"`                          | Everything after `--` is text, never a flag                                                           |
-| `speak.voice`   | `--voice <name>`                               | That voice reads, instead of the one in settings                                                      |
-| `speak.speed`   | `--speed <multiplier>`                         | That speed reads, rounded to the closest one the model offers                                         |
-| `speak.replace` | A read starts while another plays              | The earlier one stops and its command returns                                                         |
-| `speak.stop`    | `yap --stop`, or the reading command is killed | Playback stops at once                                                                                |
-| `speak.pause`   | `yap --pause`                                  | Playback pauses, or resumes if paused                                                                 |
-| `speak.open`    | `yap` in a terminal with no text               | The window opens                                                                                      |
-| `speak.launch`  | Any `yap` command while the app isn't running  | The app starts in the tray, then handles the command. The app MUST NOT hold the command's output open |
-| `speak.source`  | `--app`, `--title` or `--url`                  | The read records where its text came from                                                             |
-| `speak.instant` | A read starts with the model loaded            | Audio starts within a few hundred milliseconds                                                        |
+| Rule            | When                                                                                            | Then                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `speak.args`    | `yap "text"`                                                                                    | The text is read aloud; the command returns once it finished playing                                  |
+| `speak.stdin`   | `yap` with text on stdin and no text arguments                                                  | Stdin is read aloud the same way                                                                      |
+| `speak.dashes`  | `yap -- "-5 degrees"`                                                                           | Everything after `--` is text, never a flag                                                           |
+| `speak.voice`   | `--voice <name>`                                                                                | That voice reads, instead of the one in settings                                                      |
+| `speak.speed`   | `--speed <multiplier>`                                                                          | That speed reads, rounded to the closest one the model offers                                         |
+| `speak.source`  | `--app`, `--title`, `--url`, or `--source-env <prefix>` for `<prefix>_APP`, `_TITLE` and `_URL` | Where the text came from is kept with the read in the library                                         |
+| `speak.replace` | A read starts while another plays                                                               | The earlier one stops and its command returns                                                         |
+| `speak.stop`    | `yap --stop`, or the reading command is killed                                                  | Playback stops at once                                                                                |
+| `speak.pause`   | `yap --pause`                                                                                   | Playback pauses, or resumes if paused                                                                 |
+| `speak.open`    | `yap` in a terminal with no text                                                                | The window opens                                                                                      |
+| `speak.launch`  | Any `yap` command while the app isn't running                                                   | The app starts in the tray, then handles the command. The app MUST NOT hold the command's output open |
+| `speak.source`  | `--app`, `--title` or `--url`                                                                   | The read records where its text came from                                                             |
+| `speak.instant` | A read starts with the model loaded                                                             | Audio starts within a few hundred milliseconds                                                        |
 
 > Why `speak.launch` says MUST: Pluck waits for the command's output to end, so an app holding it would never let a read finish.
 
