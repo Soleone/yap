@@ -12,7 +12,7 @@ LANGS = {"a": "en-us", "b": "en-gb", "e": "es", "f": "fr-fr", "h": "hi", "i": "i
 
 
 def load(source):
-    folder = serve.DATA / "models" / "kokoro-v1.0"
+    folder = serve.FOLDER / "models" / "kokoro-v1.0"
     model = serve.download(f"{source}/kokoro-v1.0.onnx", folder / "kokoro-v1.0.onnx")
     voices = serve.download(f"{source}/voices-v1.0.bin", folder / "voices-v1.0.bin")
     tts = Kokoro(str(model), str(voices))

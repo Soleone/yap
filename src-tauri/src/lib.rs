@@ -21,6 +21,7 @@ use tauri::{
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 /// The `yap` command starts the app with this when it isn't running, so it goes straight to the tray.
@@ -29,7 +30,7 @@ const START_HIDDEN: &str = "--start-hidden";
 /// Holding the hotkey repeats it; one grab at a time.
 static GRABBING: AtomicBool = AtomicBool::new(false);
 
-/// Models, pieces, the library and the port file.
+/// Pieces, the library, the port file, and the models unless the settings put them elsewhere.
 fn data_dir() -> PathBuf {
   dirs::data_local_dir().expect("the OS has a local data folder").join("yap")
 }
@@ -42,10 +43,14 @@ fn config_dir() -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let (data, config) = (data_dir(), config_dir());
-  // Before any thread starts, so nothing reads the environment while it changes. Models go in yap's own folder,
-  // not the shared Hugging Face cache, so removing yap removes them.
+  let store = Store::open(&config);
+  let chosen = store.get().models_folder;
+  let models = if chosen.is_empty() { data.clone() } else { PathBuf::from(chosen) };
+  // Before any thread starts, so nothing reads the environment while it changes. That's also why a new models
+  // folder waits for a restart. Models go in yap's own folder, not the shared Hugging Face cache, so removing yap
+  // removes them.
   unsafe {
-    std::env::set_var("HF_HUB_CACHE", data.join("models"));
+    std::env::set_var("HF_HUB_CACHE", models.join("models"));
     std::env::set_var("HF_TOKEN_PATH", settings::token_file(&config));
   }
 
@@ -61,6 +66,7 @@ pub fn run() {
         })
         .build(),
     )
+    .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![START_HIDDEN])))
     .invoke_handler(tauri::generate_handler![
       popup::toggle_pause,
@@ -74,6 +80,9 @@ pub fn run() {
       engine_status,
       has_token,
       set_token,
+      models_folder,
+      choose_folder,
+      restart,
       library_list,
       library_play,
       library_delete,
@@ -91,7 +100,6 @@ pub fn run() {
     .setup(move |app| {
       std::fs::create_dir_all(&data)?;
       std::fs::create_dir_all(&config)?;
-      let store = Store::open(&config);
       let hotkey = store.get().hotkey;
       if !hotkey.is_empty() {
         // A hotkey another app took meanwhile stays in the settings, where it can be changed.
@@ -99,13 +107,14 @@ pub fn run() {
       }
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library.clone(), store.clone(), data.clone());
+      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models.clone());
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
       app.manage(store);
       app.manage(engine);
       app.manage(library);
+      app.manage(ModelsFolder(models));
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
@@ -271,4 +280,24 @@ fn pause_hotkey(app: AppHandle) {
 #[tauri::command]
 fn platform() -> &'static str {
   std::env::consts::OS
+}
+
+/// The models folder in use, which a new one in the settings replaces at the next start.
+struct ModelsFolder(PathBuf);
+
+#[tauri::command]
+fn models_folder(folder: State<ModelsFolder>) -> PathBuf {
+  folder.0.clone()
+}
+
+/// The folder picked in the system's folder dialog, which opens at `start`; none when it was cancelled. Async so the
+/// open dialog doesn't hold up the window.
+#[tauri::command]
+async fn choose_folder(app: AppHandle, start: PathBuf) -> Option<PathBuf> {
+  app.dialog().file().set_title("Choose a models folder").set_directory(start).blocking_pick_folder()?.into_path().ok()
+}
+
+#[tauri::command]
+fn restart(app: AppHandle) {
+  app.restart();
 }

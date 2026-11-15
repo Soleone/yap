@@ -23,6 +23,8 @@ pub struct Settings {
   pub hotkey: String,
   /// Reads not played or kept for this many days are deleted; 0 keeps every read.
   pub keep_days: u32,
+  /// Holds the models and their Python runtimes; empty is the data folder. Read when the app starts.
+  pub models_folder: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -53,6 +55,7 @@ impl Default for Settings {
       position: Position::Bottom,
       hotkey: String::new(),
       keep_days: 30,
+      models_folder: String::new(),
     }
   }
 }

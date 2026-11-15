@@ -72,7 +72,8 @@ pub struct Engine {
   library: Arc<Library>,
   settings: Store,
   status: Arc<Mutex<Status>>,
-  data: PathBuf,
+  /// Where models download, the models folder in the settings when the app started.
+  models: PathBuf,
 }
 
 enum Job {
@@ -91,11 +92,11 @@ impl Engine {
   /// Starts the reading thread, which loads the model and primes the voice in the settings right away so the first
   /// read starts at once, and the saving thread, which makes the reads saved for later, those from before a restart
   /// first, and prunes old reads.
-  pub fn start(player: Player, library: Arc<Library>, settings: Store, data: PathBuf) -> Engine {
+  pub fn start(player: Player, library: Arc<Library>, settings: Store, models: PathBuf) -> Engine {
     let (jobs, job_rx) = channel();
     let (saves, save_rx) = channel();
     let status = Arc::new(Mutex::new(Status::Ready));
-    let engine = Engine { jobs, saves, player, library, settings, status, data };
+    let engine = Engine { jobs, saves, player, library, settings, status, models };
     let reader = engine.clone();
     std::thread::spawn(move || reader.read(job_rx));
     let saver = engine.clone();
@@ -172,7 +173,7 @@ impl Engine {
   }
 
   fn read(self, jobs: Receiver<Job>) {
-    let mut maker = Maker::new(self.data.clone(), "read", Some(self.status.clone()));
+    let mut maker = Maker::new(self.models.clone(), "read", Some(self.status.clone()));
     for job in jobs {
       match job {
         Job::Speak { read, voice, pieces, from } => {
@@ -223,7 +224,7 @@ impl Engine {
   /// Makes saved reads one at a time, oldest first, and prunes old reads every so often. Waits for `wake` when
   /// nothing is left.
   fn make_saved(self, wake: Receiver<()>) {
-    let mut maker = Maker::new(self.data.clone(), "save", None);
+    let mut maker = Maker::new(self.models.clone(), "save", None);
     let mut pruned: Option<Instant> = None;
     loop {
       if pruned.is_none_or(|at| at.elapsed() > PRUNE_EVERY) {
@@ -273,7 +274,7 @@ impl Engine {
 
 /// The model one thread uses, loaded on first use and switched when a voice needs another.
 struct Maker {
-  data: PathBuf,
+  models: PathBuf,
   /// Keeps the files of the reading and the saving workers apart.
   slot: &'static str,
   /// The settings window shows the reading model's status; the saving thread reports through the library instead.
@@ -293,8 +294,8 @@ enum Loader {
 }
 
 impl Maker {
-  fn new(data: PathBuf, slot: &'static str, status: Option<Arc<Mutex<Status>>>) -> Maker {
-    Maker { data, slot, status, loaded: None }
+  fn new(models: PathBuf, slot: &'static str, status: Option<Arc<Mutex<Status>>>) -> Maker {
+    Maker { models, slot, status, loaded: None }
   }
 
   fn set(&self, status: Status) {
@@ -324,7 +325,7 @@ impl Maker {
       self.loaded = None;
       let runtime = match voice.model.runtime {
         Runtime::Phonon => Loader::Phonon(Phonon::load(voice.model, voice.language)?),
-        Runtime::Python(script) => Loader::Python(Worker::start(&self.data, self.slot, script, voice.model)?),
+        Runtime::Python(script) => Loader::Python(Worker::start(&self.models, self.slot, script, voice.model)?),
       };
       self.loaded = Some(Loaded { model: voice.model.id, language: voice.language, runtime });
     }

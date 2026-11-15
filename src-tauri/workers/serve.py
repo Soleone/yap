@@ -17,7 +17,8 @@ from pathlib import Path
 import numpy as np
 
 RATE = 24_000
-DATA = Path(os.environ["YAP_DATA"])
+# Weights go in its `models` folder, Python code in `runtimes`.
+FOLDER = Path(os.environ["YAP_MODELS"])
 
 # Libraries print progress and warnings to stdout, so the protocol keeps the real stdout to itself.
 _protocol = os.fdopen(os.dup(1), "w", encoding="utf-8")
@@ -71,7 +72,7 @@ def hugging_face(source):
     from huggingface_hub import snapshot_download
 
     repo, revision = source.removeprefix("hf://").split("@")
-    folder = DATA / "models" / f"{repo.replace('/', '--')}-{revision[:12]}"
+    folder = FOLDER / "models" / f"{repo.replace('/', '--')}-{revision[:12]}"
     return Path(snapshot_download(repo, revision=revision, local_dir=folder))
 
 
@@ -87,7 +88,7 @@ def download(url, path):
 
 def github(repo, commit):
     """The code of a GitHub repo at `commit`, for models whose inference code is a checkout rather than a package."""
-    folder = DATA / "runtimes" / "code" / f"{repo.replace('/', '-')}-{commit}"
+    folder = FOLDER / "runtimes" / "code" / f"{repo.replace('/', '-')}-{commit}"
     if not folder.exists():
         archive = download(f"https://github.com/{repo}/archive/{commit}.zip", folder.with_suffix(".zip"))
         with zipfile.ZipFile(archive) as zip:

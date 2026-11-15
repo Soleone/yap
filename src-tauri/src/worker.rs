@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-/// The scripts, written next to each other into the data folder so each can import `serve`.
+/// The scripts, written next to each other into the models folder so each can import `serve`.
 const SCRIPTS: &[(&str, &str)] = &[
   ("serve.py", include_str!("../workers/serve.py")),
   ("kokoro.py", include_str!("../workers/kokoro.py")),
@@ -27,8 +27,8 @@ pub struct Worker {
 impl Worker {
   /// Starts `script` for `model` and waits until the model is loaded. The first start downloads Python, the model's
   /// packages and its weights, which can take a long while. `slot` keeps the files of two workers apart.
-  pub fn start(data: &Path, slot: &str, script: &str, model: &Model) -> Result<Worker, String> {
-    let folder = data.join("workers");
+  pub fn start(models: &Path, slot: &str, script: &str, model: &Model) -> Result<Worker, String> {
+    let folder = models.join("runtimes").join("workers");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     for (name, code) in SCRIPTS {
       let path = folder.join(name);
@@ -39,13 +39,13 @@ impl Worker {
     }
     let log = folder.join(format!("{script}-{slot}.log"));
     let stderr = std::fs::File::create(&log).map_err(|error| error.to_string())?;
-    let runtimes = data.join("runtimes");
+    let runtimes = models.join("runtimes");
     let mut command = Command::new("uv");
     command
       .args(["run", "--script"])
       .arg(folder.join(format!("{script}.py")))
       .arg(model.source)
-      .env("YAP_DATA", data)
+      .env("YAP_MODELS", models)
       // Python, packages and environments stay in yap's folder, so removing yap removes them.
       .env("UV_CACHE_DIR", runtimes.join("uv"))
       .env("UV_PYTHON_INSTALL_DIR", runtimes.join("python"))

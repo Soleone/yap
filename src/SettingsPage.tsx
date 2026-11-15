@@ -168,6 +168,10 @@ export function SettingsPage() {
           />
           {model.gated && <TokenField model={model} />}
           <ModelStatus status={status} />
+          <ModelsFolderField
+            chosen={settings.modelsFolder}
+            onChange={(modelsFolder) => change({ modelsFolder })}
+          />
         </FieldSet>
 
         <FieldSeparator />
@@ -430,6 +434,51 @@ function TokenField({ model }: { model: Model }) {
         Accept the terms at huggingface.co/gradium/{model.id} while signed in, then paste a read
         token from huggingface.co/settings/tokens.
       </FieldDescription>
+    </Field>
+  );
+}
+
+/** Where models download. Yap switches to a new folder when it starts, so until then a restart is offered. */
+function ModelsFolderField({
+  chosen,
+  onChange,
+}: {
+  chosen: string;
+  onChange: (folder: string) => void;
+}) {
+  const [inUse, setInUse] = useState<string | null>(null);
+
+  useEffect(() => void bridge.modelsFolder().then(setInUse), []);
+
+  if (inUse === null) return null;
+  const folder = chosen || inUse;
+  const choose = async () => {
+    const picked = await bridge.chooseFolder(folder);
+    if (picked) onChange(picked);
+  };
+
+  return (
+    <Field>
+      <FieldLabel htmlFor="models-folder">Models folder</FieldLabel>
+      <div className="flex gap-2">
+        <Input id="models-folder" readOnly value={folder} />
+        <Button variant="outline" onClick={() => void choose()}>
+          Choose…
+        </Button>
+      </div>
+      {folder === inUse ? (
+        <FieldDescription>
+          Models and their Python runtimes download here. Ones already downloaded stay where they
+          are.
+        </FieldDescription>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <FieldDescription>Yap switches to it when it restarts.</FieldDescription>
+          <Button variant="outline" size="sm" onClick={() => void bridge.restart()}>
+            Restart now
+          </Button>
+        </div>
+      )}
     </Field>
   );
 }
