@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2](https://github.com/Soleone/yap/compare/v0.1.1...v0.1.2) (2026-11-15)
+
+### Bug Fixes
+
+* leave CHANGELOG.md out of formatting, like Pluck ([b4321e4](https://github.com/Soleone/yap/commit/b4321e422320520757736d53b58c03eedb47de80))
+
 ## 0.1.1 (2026-11-15)
 
 ### Features
