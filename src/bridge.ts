@@ -29,6 +29,8 @@ export type Settings = {
   speed: number;
   popup: PopupStyle;
   position: "top" | "bottom";
+  /** Reads the selected text of any app, like `Ctrl+Alt+R`. Empty is off. */
+  hotkey: string;
 };
 
 /** A model from the registry. */
@@ -89,4 +91,9 @@ export const bridge = {
   /** Plays a read again from piece number `from`. */
   libraryPlay: (id: number, from: number) => invoke<void>("library_play", { id, from }),
   libraryDelete: (id: number) => invoke<void>("library_delete", { id }),
+  /** Registers and saves the hotkey; empty turns it off. Fails when the keys are taken. */
+  setHotkey: (hotkey: string) => invoke<void>("set_hotkey", { hotkey }),
+  /** Turns the hotkey off while a new one is recorded, since registered keys never reach the page. */
+  pauseHotkey: () => invoke<void>("pause_hotkey"),
+  platform: () => invoke<"windows" | "macos" | "linux">("platform"),
 };

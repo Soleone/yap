@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { LoaderCircle, Play } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
+import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
 import { bridge, type CatalogVoice, type EngineStatus, type Model, type Settings } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +16,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 
@@ -148,6 +150,11 @@ export function SettingsPage() {
           />
         </FieldSet>
         <FieldSeparator />
+        <HotkeyField
+          hotkey={settings.hotkey}
+          onChange={(hotkey) => setSettings({ ...settings, hotkey })}
+        />
+        <FieldSeparator />
         <Field orientation="horizontal">
           <FieldContent>
             <FieldLabel htmlFor="autostart">Start with the system</FieldLabel>
@@ -161,6 +168,89 @@ export function SettingsPage() {
         </Field>
       </FieldGroup>
     </div>
+  );
+}
+
+/** An optional hotkey that reads the selected text of any app. Click, then press the keys. */
+function HotkeyField({ hotkey, onChange }: { hotkey: string; onChange: (hotkey: string) => void }) {
+  const [platform, setPlatform] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  useEffect(() => void bridge.platform().then(setPlatform), []);
+
+  const start = () => {
+    setProblem(null);
+    setRecording(true);
+    void bridge.pauseHotkey();
+  };
+
+  /** Registers `next`, or the current hotkey again when recording is abandoned. */
+  const finish = (next: string) => {
+    setRecording(false);
+    bridge.setHotkey(next).then(
+      () => onChange(next),
+      (error: unknown) => setProblem(String(error)),
+    );
+  };
+
+  const record = (event: React.KeyboardEvent) => {
+    if (!recording || event.key === "Tab") return;
+    event.preventDefault();
+    if (event.key === "Escape") return finish(hotkey);
+    const next = hotkeyFromKeyDown(event.nativeEvent);
+    if (next) finish(next);
+  };
+
+  if (!platform) return null;
+  if (platform === "linux")
+    return (
+      <Field>
+        <FieldLabel>Hotkey</FieldLabel>
+        <FieldDescription>
+          Wayland doesn't let apps grab keys, so bind one in your window manager. In Hyprland:{" "}
+          <code>bind = SUPER, R, exec, wl-paste --primary | yap</code>
+        </FieldDescription>
+      </Field>
+    );
+
+  const modifiers = platform === "macos" ? "Ctrl, Option or Cmd" : "Ctrl, Alt or Win";
+  return (
+    <Field>
+      <FieldLabel id="hotkey-label">Hotkey</FieldLabel>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          aria-labelledby="hotkey-label"
+          aria-pressed={recording}
+          onClick={() => (recording ? finish(hotkey) : start())}
+          onBlur={() => recording && finish(hotkey)}
+          onKeyDown={record}
+        >
+          {recording ? (
+            <span className="text-muted-foreground">Press keys…</span>
+          ) : hotkey ? (
+            <KbdGroup>
+              {hotkeyKeys(hotkey, platform).map((key) => (
+                <Kbd key={key}>{key}</Kbd>
+              ))}
+            </KbdGroup>
+          ) : (
+            "Set a hotkey"
+          )}
+        </Button>
+        {hotkey && !recording && (
+          <Button variant="ghost" onClick={() => finish("")}>
+            Turn off
+          </Button>
+        )}
+      </div>
+      <FieldDescription>
+        Reads the selected text of any app; pressed with nothing selected, it stops reading. Use{" "}
+        {modifiers} with a letter, digit, F-key or Space. Escape keeps the current one.
+      </FieldDescription>
+      {problem && <FieldError>{problem}</FieldError>}
+    </Field>
   );
 }
 

@@ -16,6 +16,8 @@ pub struct Settings {
   pub speed: f32,
   pub popup: PopupStyle,
   pub position: Position,
+  /// Reads the selected text of any app, like `Ctrl+Alt+R`. Empty is off.
+  pub hotkey: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -42,6 +44,7 @@ impl Default for Settings {
       speed: 1.0,
       popup: PopupStyle::Subtitles,
       position: Position::Bottom,
+      hotkey: String::new(),
     }
   }
 }

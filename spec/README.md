@@ -70,14 +70,14 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 
 ## Settings
 
-| Rule               | When                    | Then                                                                                                     |
-| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `settings.voice`   | Choosing a voice        | The model's voices list with their descriptions, and a preview line plays                                |
-| `settings.speed`   | Moving the speed slider | Its steps are the ones the model offers; the next read uses it                                           |
-| `settings.model`   | Choosing a model        | Models from the registry list with size, languages and license; choosing one downloads it                |
-| `settings.token`   | Choosing a gated model  | A field for a Hugging Face token shows; the token is saved apart from the settings and never shown again |
-| `settings.hotkey`  | Setting a hotkey        | Pressing it reads the selected text of any app. Off until set                                            |
-| `settings.startup` | Start with the system   | Yap starts in the tray when you log in                                                                   |
+| Rule               | When                    | Then                                                                                                                                                                                                                                                          |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.voice`   | Choosing a voice        | The model's voices list with their descriptions, and a preview line plays                                                                                                                                                                                     |
+| `settings.speed`   | Moving the speed slider | Its steps are the ones the model offers; the next read uses it                                                                                                                                                                                                |
+| `settings.model`   | Choosing a model        | Models from the registry list with size, languages and license; choosing one downloads it                                                                                                                                                                     |
+| `settings.token`   | Choosing a gated model  | A field for a Hugging Face token shows; the token is saved apart from the settings and never shown again                                                                                                                                                      |
+| `settings.hotkey`  | Pressing the hotkey     | The selected text of the app in front is read, with that app, window title and page as its source; the clipboard is put back. With nothing selected, it stops reading. Off until set; on Wayland the window manager binds `wl-paste --primary \| yap` instead |
+| `settings.startup` | Start with the system   | Yap starts in the tray when you log in                                                                                                                                                                                                                        |
 
 ## Glossary
 
