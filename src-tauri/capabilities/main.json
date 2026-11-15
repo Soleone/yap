@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window turns starting with the system on and off",
+  "windows": ["main"],
+  "permissions": ["autostart:default"]
+}

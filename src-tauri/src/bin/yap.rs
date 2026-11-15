@@ -12,6 +12,7 @@ const USAGE: &str = "usage:
   yap \"text\"            read the text aloud, and wait while it plays
   ... | yap             read stdin
   yap --voice Maeve ... read in another voice
+  yap --speed 1.2 ...   read faster or slower; the model's closest speed is used
   yap --app Firefox --title \"Docs\" --url https://... ...
                         where the text came from, kept with the read
   yap --stop            stop what plays
@@ -32,6 +33,7 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
   let mut args = std::env::args().skip(1);
   let mut voice = None;
+  let mut speed = None;
   let mut source = serde_json::json!({});
   let mut words = Vec::new();
   let mut command = "speak";
@@ -41,6 +43,10 @@ fn run() -> Result<(), String> {
       "--stop" => command = "stop",
       "--pause" => command = "pause",
       "--voice" => voice = Some(args.next().ok_or("--voice needs a name")?),
+      "--speed" => {
+        let value = args.next().ok_or("--speed needs a number, like 1.2")?;
+        speed = Some(value.parse::<f32>().map_err(|_| format!("--speed needs a number, like 1.2, not {value}"))?);
+      }
       "--app" | "--title" | "--url" => {
         source[&arg[2..]] = args.next().ok_or(format!("{arg} needs a value"))?.into();
       }
@@ -68,7 +74,7 @@ fn run() -> Result<(), String> {
       if text.trim().is_empty() {
         return Ok(());
       }
-      serde_json::json!({ "command": "speak", "text": text, "voice": voice, "source": source })
+      serde_json::json!({ "command": "speak", "text": text, "voice": voice, "speed": speed, "source": source })
     }
     command => serde_json::json!({ "command": command }),
   };

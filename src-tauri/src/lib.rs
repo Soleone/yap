@@ -2,13 +2,17 @@ mod engine;
 mod library;
 mod player;
 mod popup;
+mod registry;
 mod server;
+mod settings;
 mod text;
 
+use engine::{CatalogVoice, Engine, Status};
+use settings::{Settings, Store};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{
-  AppHandle, Manager, WindowEvent,
+  AppHandle, Manager, State, WindowEvent,
   menu::{Menu, MenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -16,21 +20,42 @@ use tauri::{
 /// The `yap` command starts the app with this when it isn't running, so it goes straight to the tray.
 const START_HIDDEN: &str = "--start-hidden";
 
-/// Models, pieces, the library and the port file. Settings will live in the config folder instead.
+/// Models, pieces, the library and the port file.
 fn data_dir() -> PathBuf {
   dirs::data_local_dir().expect("the OS has a local data folder").join("yap")
 }
 
+/// Settings and the Hugging Face token.
+fn config_dir() -> PathBuf {
+  dirs::config_dir().expect("the OS has a config folder").join("yap")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let data = data_dir();
+  let (data, config) = (data_dir(), config_dir());
   // Before any thread starts, so nothing reads the environment while it changes. Models go in yap's own folder,
   // not the shared Hugging Face cache, so removing yap removes them.
-  unsafe { std::env::set_var("HF_HUB_CACHE", data.join("models")) };
+  unsafe {
+    std::env::set_var("HF_HUB_CACHE", data.join("models"));
+    std::env::set_var("HF_TOKEN_PATH", settings::token_file(&config));
+  }
 
   tauri::Builder::default()
     .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
-    .invoke_handler(tauri::generate_handler![popup::toggle_pause, popup::stop, popup::fit_popup])
+    .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![START_HIDDEN])))
+    .invoke_handler(tauri::generate_handler![
+      popup::toggle_pause,
+      popup::stop,
+      popup::fit_popup,
+      get_settings,
+      set_settings,
+      models,
+      voices,
+      preview,
+      engine_status,
+      has_token,
+      set_token,
+    ])
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
@@ -39,12 +64,16 @@ pub fn run() {
     })
     .setup(move |app| {
       std::fs::create_dir_all(&data)?;
+      std::fs::create_dir_all(&config)?;
+      let store = Store::open(&config);
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = engine::Engine::start(player.clone(), library);
-      server::start(&data, engine, player.clone())?;
-      popup::start(app.handle().clone(), player.clone());
+      let engine = Engine::start(player.clone(), library, store.clone());
+      server::start(&data, engine.clone(), player.clone())?;
+      popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
+      app.manage(store);
+      app.manage(engine);
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
@@ -81,5 +110,59 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
       }
     })
     .build(app)?;
+  Ok(())
+}
+
+#[tauri::command]
+fn get_settings(store: State<Store>) -> Settings {
+  store.get()
+}
+
+/// Saves the settings and gets their voice ready, so the next read starts at once.
+#[tauri::command]
+fn set_settings(store: State<Store>, engine: State<Engine>, settings: Settings) -> Result<(), String> {
+  store.set(settings)?;
+  engine.prime();
+  Ok(())
+}
+
+#[tauri::command]
+fn models() -> &'static [registry::Model] {
+  registry::MODELS
+}
+
+/// Async so the first catalog download doesn't hold up the window.
+#[tauri::command]
+async fn voices() -> Result<Vec<CatalogVoice>, String> {
+  engine::voices()
+}
+
+/// Reads a line in the voice and speed of the settings, without keeping it in the library.
+#[tauri::command]
+fn preview(engine: State<Engine>) -> Result<(), String> {
+  let voice = engine.voice(None, None);
+  let line = format!("Hi, I'm {}. This is how I sound reading to you.", voice.name);
+  engine.speak(&line, None, voice).map(drop)
+}
+
+#[tauri::command]
+fn engine_status(engine: State<Engine>) -> Status {
+  engine.status()
+}
+
+/// Whether a Hugging Face token is saved. The token itself never goes back to the window.
+#[tauri::command]
+fn has_token() -> bool {
+  settings::token_file(&config_dir()).exists()
+}
+
+/// Saves the token for gated models, or removes it when empty.
+#[tauri::command]
+fn set_token(engine: State<Engine>, token: String) -> Result<(), String> {
+  let file = settings::token_file(&config_dir());
+  let token = token.trim();
+  let result = if token.is_empty() { std::fs::remove_file(&file) } else { std::fs::write(&file, token) };
+  result.map_err(|error| error.to_string())?;
+  engine.prime();
   Ok(())
 }

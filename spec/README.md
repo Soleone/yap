@@ -27,6 +27,7 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 | `speak.stdin`   | `yap` with text on stdin and no text arguments | Stdin is read aloud the same way                                                                      |
 | `speak.dashes`  | `yap -- "-5 degrees"`                          | Everything after `--` is text, never a flag                                                           |
 | `speak.voice`   | `--voice <name>`                               | That voice reads, instead of the one in settings                                                      |
+| `speak.speed`   | `--speed <multiplier>`                         | That speed reads, rounded to the closest one the model offers                                         |
 | `speak.replace` | A read starts while another plays              | The earlier one stops and its command returns                                                         |
 | `speak.stop`    | `yap --stop`, or the reading command is killed | Playback stops at once                                                                                |
 | `speak.pause`   | `yap --pause`                                  | Playback pauses, or resumes if paused                                                                 |
@@ -62,17 +63,19 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 | `popup.show`      | A read plays and the popup style isn't none | A popup shows at the top or bottom center of the screen under the cursor, without taking focus |
 | `popup.subtitles` | Style subtitles                             | The current sentence shows, with the spoken words highlighted as they go                       |
 | `popup.minimal`   | Style minimal                               | The source, voice and progress show                                                            |
+| `popup.off`       | Style no popup                              | Nothing shows while reading                                                                    |
 | `popup.controls`  | Hovering the popup                          | A pause button and an x show; the x stops the read and hides the popup                         |
 
 ## Settings
 
-| Rule               | When                    | Then                                                                                      |
-| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------- |
-| `settings.voice`   | Choosing a voice        | The model's voices list with their descriptions, and a preview line plays                 |
-| `settings.speed`   | Moving the speed slider | Its steps are the ones the model offers; the next read uses it                            |
-| `settings.model`   | Choosing a model        | Models from the registry list with size, languages and license; choosing one downloads it |
-| `settings.hotkey`  | Setting a hotkey        | Pressing it reads the selected text of any app. Off until set                             |
-| `settings.startup` | Start with the system   | Yap starts in the tray when you log in                                                    |
+| Rule               | When                    | Then                                                                                                     |
+| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `settings.voice`   | Choosing a voice        | The model's voices list with their descriptions, and a preview line plays                                |
+| `settings.speed`   | Moving the speed slider | Its steps are the ones the model offers; the next read uses it                                           |
+| `settings.model`   | Choosing a model        | Models from the registry list with size, languages and license; choosing one downloads it                |
+| `settings.token`   | Choosing a gated model  | A field for a Hugging Face token shows; the token is saved apart from the settings and never shown again |
+| `settings.hotkey`  | Setting a hotkey        | Pressing it reads the selected text of any app. Off until set                                            |
+| `settings.startup` | Start with the system   | Yap starts in the tray when you log in                                                                   |
 
 ## Glossary
 

@@ -24,6 +24,7 @@ enum Command {
   Speak {
     text: String,
     voice: Option<String>,
+    speed: Option<f32>,
     #[serde(default)]
     source: Source,
   },
@@ -62,8 +63,8 @@ fn serve(stream: &TcpStream, token: &str, engine: &Engine, player: &Player) -> R
     return Err("wrong token".to_string());
   }
   match request.command {
-    Command::Speak { text, voice, source } => {
-      let read = engine.speak(&text, &source, voice)?;
+    Command::Speak { text, voice, speed, source } => {
+      let read = engine.speak(&text, Some(&source), engine.voice(voice, speed))?;
       stop_when_dropped(stream, player, read)?;
       loop {
         match player.progress(read) {

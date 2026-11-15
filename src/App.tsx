@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Popup, PopupCard } from "@/Popup";
+import { SettingsPage } from "@/SettingsPage";
 import type { Now } from "@/bridge";
 import { ThemePicker } from "@/components/soleone/theme-picker";
 
@@ -14,7 +15,7 @@ export function App() {
   return isTauri() ? <Main /> : <Prototype />;
 }
 
-/** Settings and the library come here. */
+/** Settings; the library comes next to it. */
 function Main() {
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
@@ -22,11 +23,13 @@ function Main() {
         <span className="font-heading font-medium">Yap</span>
         <ThemePicker />
       </header>
+      <SettingsPage />
     </div>
   );
 }
 
 const SAMPLE: Now = {
+  style: "subtitles",
   text: "Yap turns text into speech, right on this machine, and keeps everything it read.",
   piece: 1,
   pieces: 4,
@@ -48,6 +51,7 @@ function Prototype() {
       <main className="mx-auto flex w-full max-w-120 flex-1 flex-col justify-end gap-3 p-4">
         <PopupCard now={SAMPLE} onPause={() => {}} onStop={() => {}} />
         <PopupCard now={{ ...SAMPLE, paused: true }} onPause={() => {}} onStop={() => {}} />
+        <PopupCard now={{ ...SAMPLE, style: "minimal" }} onPause={() => {}} onStop={() => {}} />
       </main>
     </div>
   );
