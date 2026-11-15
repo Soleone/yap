@@ -7,10 +7,14 @@ Rust does the real work: model, player, library and the local server live in `sr
 ## Running it
 
 - `pnpm dev:web` runs the UI in a browser. Use it for UI work.
-- Rust builds and tests on Windows: run `win-sync` here (copies to `D:\src\wsl\yap`, profile in `~/.config/win-sync/yap.ignore`), then in PowerShell there `pnpm install` and `pnpm build:tauri`, like Tasks and Reader, or `cargo test --release` in `src-tauri`. Both exes land in `src-tauri\target\release`, next to the one Windows installer, `src-tauri\target\release\bundle\nsis\Yap_<version>_x64-setup.exe`; `src-tauri/windows/installer-hooks.nsh` adds `yap.exe` and puts it on the user's PATH. Plain `cargo build` leaves out Tauri's `custom-protocol` feature, so its windows load the dev server URL and stay blank. WSL lacks the system libraries to link Tauri.
+- Rust builds and tests on Windows: run `win-sync` here (copies to `D:\src\wsl\yap`, profile in `~/.config/win-sync/yap.ignore`), then in PowerShell there `pnpm install` and `pnpm build:tauri`, like Tasks and Reader, or `cargo test --release` in `src-tauri`. Both exes land in `src-tauri\target\release`, next to the one Windows installer, `src-tauri\target\release\bundle\nsis\Yap_<version>_x64-setup.exe`; `src-tauri/windows/installer-hooks.nsh` adds `yap.exe` and puts it on the user's PATH. Plain `cargo build` leaves out Tauri's `custom-protocol` feature, so its windows load the dev server URL and stay blank. WSL lacks the system libraries to link Tauri. It can still type-check for Windows, since checking links nothing: `cargo clippy --tests --target x86_64-pc-windows-gnu` with `x86_64-w64-mingw32-gcc`, `-ar` and `-windres` stubs on PATH that only touch their output file.
 - Two binaries: `yap-app` is the tray app, `yap` the command that talks to it over `127.0.0.1` (port and token in `server.json` in the data folder).
 - Data: models, pieces, `library.db` and `server.json` in `%LOCALAPPDATA%\yap`, `~/Library/Application Support/yap`, `~/.local/share/yap`. Settings will go in the config folder (`%APPDATA%\yap`, `~/Library/Application Support/yap`, `~/.config/yap`).
 - Rust tests mark the spec rule they cover with a `// slug` comment above the test.
+
+## Releasing
+
+`pnpm release` bumps the version, writes CHANGELOG.md and pushes a `v*` tag. `.github/workflows/release.yml` then builds the signed Windows installer and publishes it with `latest.json`, which the in-app updater reads from `github.com/Soleone/yap`. The signing key is in `$DATA/secrets/yap` and in the repo's Actions secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Local `pnpm build:tauri` builds an unsigned installer, which is fine for testing.
 
 ## Where things are
 

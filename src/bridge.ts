@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 
 type PopupStyle = "subtitles" | "minimal" | "off";
 
@@ -82,6 +84,9 @@ export type EngineStatus =
   | { state: "ready" }
   | { state: "failed"; error: string };
 
+/** A newer release than the one running. */
+export type Update = { version: string; install: () => Promise<void> };
+
 export const bridge = {
   /** Called every tick while a read plays, and with `null` once nothing plays, in every window. */
   onNow(handler: (now: Now | null) => void) {
@@ -120,4 +125,18 @@ export const bridge = {
   /** Turns the hotkey off while a new one is recorded, since registered keys never reach the page. */
   pauseHotkey: () => invoke<void>("pause_hotkey"),
   platform: () => invoke<"windows" | "macos" | "linux">("platform"),
+  /** The newest release on GitHub when it is newer than this one; never in development. */
+  async availableUpdate(): Promise<Update | null> {
+    if (import.meta.env.DEV) return null;
+    const update = await check().catch(() => null);
+    if (!update) return null;
+    return {
+      version: update.version,
+      async install() {
+        await update.downloadAndInstall();
+        // Windows never gets here: its installer quits yap and starts it again.
+        await relaunch();
+      },
+    };
+  },
 };

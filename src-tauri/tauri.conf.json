@@ -52,5 +52,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAzM0ZBRDRGOEZCN0M2QTIKUldTaXhyZVBUNjAvQXozeGF0Q0JyZXR2Nk9iM203VjM2YjdPaVRLNWJpYXA0TWEvSHM0WnZhRkQK",
+      "endpoints": ["https://github.com/Soleone/yap/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

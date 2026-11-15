@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Popup, PopupCard } from "@/Popup";
 import { LibraryPage } from "@/LibraryPage";
 import { SettingsPage } from "@/SettingsPage";
+import { UpdateBanner } from "@/UpdateBanner";
 import type { Now } from "@/bridge";
 import { ThemePicker } from "@/components/soleone/theme-picker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,6 +22,7 @@ export function App() {
 function Main() {
   return (
     <div className="min-h-svh bg-background text-foreground">
+      <UpdateBanner />
       <Tabs defaultValue="library">
         <header className="grid grid-cols-3 items-center p-4">
           <span className="font-heading font-medium">Yap</span>

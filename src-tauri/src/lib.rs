@@ -45,12 +45,12 @@ pub fn run() {
   let (data, config) = (data_dir(), config_dir());
   let store = Store::open(&config);
   let chosen = store.get().models_folder;
-  let models = if chosen.is_empty() { data.clone() } else { PathBuf::from(chosen) };
+  let models_dir = if chosen.is_empty() { data.clone() } else { PathBuf::from(chosen) };
   // Before any thread starts, so nothing reads the environment while it changes. That's also why a new models
   // folder waits for a restart. Models go in yap's own folder, not the shared Hugging Face cache, so removing yap
   // removes them.
   unsafe {
-    std::env::set_var("HF_HUB_CACHE", models.join("models"));
+    std::env::set_var("HF_HUB_CACHE", models_dir.join("models"));
     std::env::set_var("HF_TOKEN_PATH", settings::token_file(&config));
   }
 
@@ -67,6 +67,8 @@ pub fn run() {
         .build(),
     )
     .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_process::init())
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![START_HIDDEN])))
     .invoke_handler(tauri::generate_handler![
       popup::toggle_pause,
@@ -107,14 +109,14 @@ pub fn run() {
       }
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models.clone());
+      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models_dir.clone());
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
       app.manage(store);
       app.manage(engine);
       app.manage(library);
-      app.manage(ModelsFolder(models));
+      app.manage(ModelsFolder(models_dir));
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
