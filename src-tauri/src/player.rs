@@ -20,19 +20,24 @@ struct Queue {
   generating: bool,
   paused: bool,
   error: Option<String>,
-  /// What the popup shows about the read.
+  /// What the popup and the library show about the read.
+  library_id: Option<i64>,
   pieces: Vec<String>,
   voice: String,
   app: String,
-  /// Device samples queued and played since the read began, and where each piece starts.
+  /// Device samples queued and played since the read began, and where each piece starts, by its index in the read.
+  /// A read played from the middle has no starts for the pieces before.
   queued: u64,
   played: u64,
-  starts: Vec<u64>,
+  starts: Vec<(usize, u64)>,
 }
 
-/// What plays right now, for the popup.
+/// What plays right now, for the popup and the library.
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Now {
+  /// The read in the library; a preview has none.
+  pub library_id: Option<i64>,
   text: String,
   piece: usize,
   pieces: usize,
@@ -78,13 +83,14 @@ impl Player {
   }
 
   /// Stops whatever plays and starts a new read of `pieces`, returning its id.
-  pub fn begin(&self, pieces: Vec<String>, voice: &str, app: &str) -> u64 {
+  pub fn begin(&self, library_id: Option<i64>, pieces: Vec<String>, voice: &str, app: &str) -> u64 {
     let mut queue = self.queue();
     let device_rate = queue.device_rate;
     *queue = Queue {
       device_rate,
       read: queue.read + 1,
       generating: true,
+      library_id,
       pieces,
       voice: voice.to_string(),
       app: app.to_string(),
@@ -103,9 +109,9 @@ impl Player {
     if queue.read != read || audio.is_empty() {
       return;
     }
-    if queue.starts.len() == piece {
+    if queue.starts.last().is_none_or(|&(last, _)| last != piece) {
       let start = queue.queued;
-      queue.starts.push(start);
+      queue.starts.push((piece, start));
     }
     let ratio = queue.device_rate as f32 / RATE as f32;
     // Linear interpolation is enough for speech going up to 44.1 or 48 kHz.
@@ -152,15 +158,16 @@ impl Player {
     if queue.samples.is_empty() && !queue.generating {
       return None;
     }
-    let piece = queue.starts.iter().rposition(|&start| start <= queue.played)?;
-    let start = queue.starts[piece];
-    let end = match queue.starts.get(piece + 1) {
-      Some(&next) => Some(next),
+    let index = queue.starts.iter().rposition(|&(_, start)| start <= queue.played)?;
+    let (piece, start) = queue.starts[index];
+    let end = match queue.starts.get(index + 1) {
+      Some(&(_, next)) => Some(next),
       None if !queue.generating => Some(queue.queued),
       None => None,
     };
     let seconds = |samples: u64| samples as f32 / queue.device_rate as f32;
     Some(Now {
+      library_id: queue.library_id,
       text: queue.pieces[piece].clone(),
       piece,
       pieces: queue.pieces.len(),

@@ -6,6 +6,8 @@ type PopupStyle = "subtitles" | "minimal" | "off";
 /** What plays right now: the current piece (one sentence) of the read and how far into it. */
 export type Now = {
   style: PopupStyle;
+  /** The read in the library; a preview has none. */
+  libraryId: number | null;
   text: string;
   piece: number;
   pieces: number;
@@ -43,6 +45,17 @@ export type Model = {
   speeds: { speed: number }[];
 };
 
+/** A read in the library. */
+export type Read = {
+  id: number;
+  /** Seconds since 1970. */
+  created: number;
+  title: string;
+  source: { app: string; title: string; url: string };
+  voice: string;
+  pieces: number;
+};
+
 export type CatalogVoice = { name: string; language: string; description: string };
 
 export type EngineStatus =
@@ -51,7 +64,7 @@ export type EngineStatus =
   | { state: "failed"; error: string };
 
 export const bridge = {
-  /** Called every tick while a read plays, and with `null` once nothing plays. */
+  /** Called every tick while a read plays, and with `null` once nothing plays, in every window. */
   onNow(handler: (now: Now | null) => void) {
     const unlisten = listen<Now | null>("yap://now", (event) => handler(event.payload));
     return () => void unlisten.then((stop) => stop());
@@ -71,4 +84,9 @@ export const bridge = {
   hasToken: () => invoke<boolean>("has_token"),
   /** An empty token removes the saved one. */
   setToken: (token: string) => invoke<void>("set_token", { token }),
+  /** Newest first. */
+  libraryList: () => invoke<Read[]>("library_list"),
+  /** Plays a read again from piece number `from`. */
+  libraryPlay: (id: number, from: number) => invoke<void>("library_play", { id, from }),
+  libraryDelete: (id: number) => invoke<void>("library_delete", { id }),
 };

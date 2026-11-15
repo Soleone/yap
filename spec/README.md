@@ -49,12 +49,14 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 
 ## Library
 
-| Rule              | When                                                          | Then                                                                                                      |
-| ----------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `library.record`  | A read starts                                                 | It is recorded with its text, first words as a title, source, voice and date                              |
-| `library.replay`  | A sentence was read before in the same model, voice and speed | It plays from disk, with quote styles, dashes and other punctuation that doesn't change the sound ignored |
-| `library.partial` | A read stops mid-sentence                                     | That sentence is not stored                                                                               |
-| `library.list`    | The library opens                                             | Reads show newest first, with play, a seek bar across the read and delete                                 |
+| Rule              | When                                                          | Then                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `library.record`  | A read starts                                                 | It is recorded with its text, first words as a title, source, voice and date. The same text read again moves to the top instead of showing twice |
+| `library.replay`  | A sentence was read before in the same model, voice and speed | It plays from disk, with quote styles, dashes and other punctuation that doesn't change the sound ignored                                        |
+| `library.partial` | A read stops mid-sentence                                     | That sentence is not stored                                                                                                                      |
+| `library.list`    | The library opens                                             | Reads show newest first, with where they came from, the voice and when                                                                           |
+| `library.play`    | Play on a read, or moving its seek bar                        | It plays again from that sentence, in the voice, model and speed it was read in                                                                  |
+| `library.delete`  | Delete on a read                                              | It goes away, with the stored sentences no other read uses                                                                                       |
 
 ## Popup
 

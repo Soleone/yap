@@ -11,7 +11,7 @@ const CHARS_PER_SECOND = 15;
 export function Popup() {
   const [now, setNow] = useState<Now | null>(null);
   const card = useRef<HTMLDivElement>(null);
-  const shown = now !== null;
+  const shown = now !== null && now.style !== "off";
 
   useEffect(() => bridge.onNow(setNow), []);
 
@@ -23,7 +23,7 @@ export function Popup() {
     return () => observer.disconnect();
   }, [shown]);
 
-  if (!now) return null;
+  if (!now || now.style === "off") return null;
   return (
     <div ref={card} className="p-2">
       <PopupCard

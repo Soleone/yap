@@ -1,6 +1,6 @@
 //! The voice model, loaded once and kept with a primed session, turning reads into audio for the player.
 
-use crate::library::{self, Library, Source};
+use crate::library::{self, Library, Sound, Source};
 use crate::player::Player;
 use crate::registry::{self, Model as ModelInfo, Speed};
 use crate::settings::Store;
@@ -32,6 +32,20 @@ impl Voice {
   fn id(&self) -> String {
     format!("{} {} {} {}", self.model.source, self.language, self.name, self.speed.duration_delta)
   }
+
+  fn sound(&self) -> Sound {
+    Sound {
+      model: self.model.id.to_string(),
+      language: self.language.clone(),
+      voice: self.name.clone(),
+      speed: self.speed.speed,
+    }
+  }
+
+  fn of(sound: Sound) -> Voice {
+    let model = registry::model(&sound.model);
+    Voice { model, language: sound.language, name: sound.voice, speed: model.speed(sound.speed) }
+  }
 }
 
 /// What the settings window shows about the model.
@@ -56,8 +70,9 @@ enum Job {
   Speak {
     read: u64,
     voice: Voice,
-    /// Each piece's text and its hash, in order.
+    /// Each piece's text and its hash, in order, and the piece to start from.
     pieces: Vec<(String, String)>,
+    from: usize,
   },
   /// Loads the model and primes the voice ahead of the next read.
   Prime(Voice),
@@ -100,22 +115,35 @@ impl Engine {
   /// Stops what plays and starts reading `text`, recorded in the library when it has a `source`. Returns the
   /// player's id for the read.
   pub fn speak(&self, text: &str, source: Option<&Source>, voice: Voice) -> Result<u64, String> {
-    let voice_id = voice.id();
-    let pieces: Vec<(String, String)> = text::pieces(&text::prepare(text))
-      .into_iter()
-      .map(|piece| {
-        let hash = library::piece_hash(&voice_id, &text::words(&piece));
-        (piece, hash)
-      })
-      .collect();
-    if let Some(source) = source {
-      let hashes: Vec<String> = pieces.iter().map(|(_, hash)| hash.clone()).collect();
-      self.library.add(text, source, &voice.name, &hashes)?;
-    }
+    let pieces = pieces(text, &voice);
+    let library_id = match source {
+      Some(source) => {
+        let hashes: Vec<String> = pieces.iter().map(|(_, hash)| hash.clone()).collect();
+        Some(self.library.add(text, source, &voice.sound(), &hashes)?)
+      }
+      None => None,
+    };
+    self.play(library_id, pieces, source.map_or("", |source| &source.app), voice, 0)
+  }
+
+  /// Plays a read from the library again from piece number `from`, the way it sounded the first time.
+  pub fn replay(&self, id: i64, from: usize) -> Result<u64, String> {
+    let (text, source, sound) = self.library.get(id)?;
+    let voice = Voice::of(sound);
+    self.play(Some(id), pieces(&text, &voice), &source.app, voice, from)
+  }
+
+  fn play(
+    &self,
+    library_id: Option<i64>,
+    pieces: Vec<(String, String)>,
+    app: &str,
+    voice: Voice,
+    from: usize,
+  ) -> Result<u64, String> {
     let texts = pieces.iter().map(|(piece, _)| piece.clone()).collect();
-    let app = source.map_or("", |source| &source.app);
-    let read = self.player.begin(texts, &voice.name, app);
-    self.jobs.send(Job::Speak { read, voice, pieces }).map_err(|_| "the engine stopped".to_string())?;
+    let read = self.player.begin(library_id, texts, &voice.name, app);
+    self.jobs.send(Job::Speak { read, voice, pieces, from }).map_err(|_| "the engine stopped".to_string())?;
     Ok(read)
   }
 
@@ -123,8 +151,8 @@ impl Engine {
     let mut model = None;
     for job in jobs {
       match job {
-        Job::Speak { read, voice, pieces } => {
-          let result = self.generate(&mut model, read, &voice, &pieces);
+        Job::Speak { read, voice, pieces, from } => {
+          let result = self.generate(&mut model, read, &voice, &pieces, from);
           self.player.finish(read, result.err());
         }
         Job::Prime(voice) => {
@@ -142,9 +170,10 @@ impl Engine {
     read: u64,
     voice: &Voice,
     pieces: &[(String, String)],
+    from: usize,
   ) -> Result<(), String> {
     let current = || self.player.current() == read;
-    for (index, (piece, hash)) in pieces.iter().enumerate() {
+    for (index, (piece, hash)) in pieces.iter().enumerate().skip(from) {
       while current() && self.player.backlog() > AHEAD_SECS {
         std::thread::sleep(Duration::from_millis(100));
       }
@@ -190,6 +219,18 @@ impl Engine {
     });
     session
   }
+}
+
+/// The sentences of `text` as `voice` reads them, each with the hash of its stored audio.
+fn pieces(text: &str, voice: &Voice) -> Vec<(String, String)> {
+  let voice_id = voice.id();
+  text::pieces(&text::prepare(text))
+    .into_iter()
+    .map(|piece| {
+      let hash = library::piece_hash(&voice_id, &text::words(&piece));
+      (piece, hash)
+    })
+    .collect()
 }
 
 struct Model {

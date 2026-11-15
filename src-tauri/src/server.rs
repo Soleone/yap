@@ -74,8 +74,14 @@ fn serve(stream: &TcpStream, token: &str, engine: &Engine, player: &Player) -> R
         }
       }
     }
-    Command::Stop => Ok(player.stop()),
-    Command::Pause => Ok(player.toggle_pause()),
+    Command::Stop => {
+      player.stop();
+      Ok(())
+    }
+    Command::Pause => {
+      player.toggle_pause();
+      Ok(())
+    }
   }
 }
 
@@ -84,7 +90,7 @@ fn stop_when_dropped(stream: &TcpStream, player: &Player, read: u64) -> Result<(
   let mut watch = stream.try_clone().map_err(|error| error.to_string())?;
   let player = player.clone();
   std::thread::spawn(move || {
-    watch.read(&mut [0]).ok();
+    watch.read_exact(&mut [0]).ok();
     if player.current() == read {
       player.stop();
     }

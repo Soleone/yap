@@ -55,6 +55,9 @@ pub fn run() {
       engine_status,
       has_token,
       set_token,
+      library_list,
+      library_play,
+      library_delete,
     ])
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
@@ -68,12 +71,13 @@ pub fn run() {
       let store = Store::open(&config);
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library, store.clone());
+      let engine = Engine::start(player.clone(), library.clone(), store.clone());
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
       app.manage(store);
       app.manage(engine);
+      app.manage(library);
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
@@ -165,4 +169,24 @@ fn set_token(engine: State<Engine>, token: String) -> Result<(), String> {
   result.map_err(|error| error.to_string())?;
   engine.prime();
   Ok(())
+}
+
+#[tauri::command]
+fn library_list(library: State<Arc<library::Library>>) -> Result<Vec<library::Read>, String> {
+  library.list()
+}
+
+/// Plays a read from the library from piece number `from`.
+#[tauri::command]
+fn library_play(engine: State<Engine>, id: i64, from: usize) -> Result<(), String> {
+  engine.replay(id, from).map(drop)
+}
+
+/// Removes a read, stopping it first when it plays.
+#[tauri::command]
+fn library_delete(library: State<Arc<library::Library>>, player: State<player::Player>, id: i64) -> Result<(), String> {
+  if player.now().is_some_and(|now| now.library_id == Some(id)) {
+    player.stop();
+  }
+  library.delete(id)
 }

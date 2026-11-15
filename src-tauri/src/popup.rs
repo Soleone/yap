@@ -12,8 +12,8 @@ const TICK: Duration = Duration::from_millis(50);
 /// A read that ends and a new one starting right after keep the popup up in between.
 const HIDE_AFTER_TICKS: u32 = 6;
 
-/// Sends what plays to the popup every tick while a read plays, and `null` once nothing played for a moment. The page
-/// sizes the window to its content through `fit_popup`, which also shows it.
+/// Sends what plays to the popup and the library every tick while a read plays, and `null` once nothing played for a
+/// moment. The popup sizes its window to its content through `fit_popup`, which also shows it, unless its style is off.
 pub fn start(app: AppHandle, player: Player, settings: Store) {
   std::thread::spawn(move || {
     let mut idle = HIDE_AFTER_TICKS + 1;
@@ -22,15 +22,12 @@ pub fn start(app: AppHandle, player: Player, settings: Store) {
       match player.now() {
         Some(now) => {
           idle = 0;
-          let style = settings.get().popup;
-          if style != PopupStyle::Off {
-            app.emit_to("popup", "yap://now", Some(Shown { style, now })).ok();
-          }
+          app.emit("yap://now", Some(Shown { style: settings.get().popup, now })).ok();
         }
         None => {
           idle = idle.saturating_add(1);
           if idle == HIDE_AFTER_TICKS {
-            app.emit_to("popup", "yap://now", None::<Shown>).ok();
+            app.emit("yap://now", None::<Shown>).ok();
           }
         }
       }
