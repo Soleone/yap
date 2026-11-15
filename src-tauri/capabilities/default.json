@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What yap's windows may call",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
