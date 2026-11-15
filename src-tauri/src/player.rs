@@ -20,6 +20,28 @@ struct Queue {
   generating: bool,
   paused: bool,
   error: Option<String>,
+  /// What the popup shows about the read.
+  pieces: Vec<String>,
+  voice: String,
+  app: String,
+  /// Device samples queued and played since the read began, and where each piece starts.
+  queued: u64,
+  played: u64,
+  starts: Vec<u64>,
+}
+
+/// What plays right now, for the popup.
+#[derive(Clone, serde::Serialize)]
+pub struct Now {
+  text: String,
+  piece: usize,
+  pieces: usize,
+  /// Seconds into the piece, and its length once all of it is generated.
+  elapsed: f32,
+  length: Option<f32>,
+  paused: bool,
+  voice: String,
+  app: String,
 }
 
 /// How a read is doing, for the client waiting on it.
@@ -55,14 +77,19 @@ impl Player {
     self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
   }
 
-  /// Stops whatever plays and starts a new read, returning its id.
-  pub fn begin(&self) -> u64 {
+  /// Stops whatever plays and starts a new read of `pieces`, returning its id.
+  pub fn begin(&self, pieces: Vec<String>, voice: &str, app: &str) -> u64 {
     let mut queue = self.queue();
-    queue.samples.clear();
-    queue.read += 1;
-    queue.generating = true;
-    queue.paused = false;
-    queue.error = None;
+    let device_rate = queue.device_rate;
+    *queue = Queue {
+      device_rate,
+      read: queue.read + 1,
+      generating: true,
+      pieces,
+      voice: voice.to_string(),
+      app: app.to_string(),
+      ..Queue::default()
+    };
     queue.read
   }
 
@@ -70,11 +97,15 @@ impl Player {
     self.queue().read
   }
 
-  /// Queues 24 kHz audio for `read`, if it is still the current one.
-  pub fn push(&self, read: u64, audio: &[f32]) {
+  /// Queues 24 kHz audio of piece number `piece` of `read`, if it is still the current one.
+  pub fn push(&self, read: u64, piece: usize, audio: &[f32]) {
     let mut queue = self.queue();
     if queue.read != read || audio.is_empty() {
       return;
+    }
+    if queue.starts.len() == piece {
+      let start = queue.queued;
+      queue.starts.push(start);
     }
     let ratio = queue.device_rate as f32 / RATE as f32;
     // Linear interpolation is enough for speech going up to 44.1 or 48 kHz.
@@ -85,6 +116,7 @@ impl Player {
       let b = (a + 1).min(audio.len() - 1);
       queue.samples.push_back(audio[a] * (1.0 - f) + audio[b] * f);
     }
+    queue.queued += n as u64;
   }
 
   /// Marks `read` as fully generated, or failed.
@@ -114,6 +146,32 @@ impl Player {
     queue.paused = !queue.paused;
   }
 
+  /// The piece playing and how far into it, while a read plays.
+  pub fn now(&self) -> Option<Now> {
+    let queue = self.queue();
+    if queue.samples.is_empty() && !queue.generating {
+      return None;
+    }
+    let piece = queue.starts.iter().rposition(|&start| start <= queue.played)?;
+    let start = queue.starts[piece];
+    let end = match queue.starts.get(piece + 1) {
+      Some(&next) => Some(next),
+      None if !queue.generating => Some(queue.queued),
+      None => None,
+    };
+    let seconds = |samples: u64| samples as f32 / queue.device_rate as f32;
+    Some(Now {
+      text: queue.pieces[piece].clone(),
+      piece,
+      pieces: queue.pieces.len(),
+      elapsed: seconds(queue.played - start),
+      length: end.map(|end| seconds(end - start)),
+      paused: queue.paused,
+      voice: queue.voice.clone(),
+      app: queue.app.clone(),
+    })
+  }
+
   pub fn progress(&self, read: u64) -> Progress {
     let queue = self.queue();
     if queue.read != read {
@@ -138,8 +196,9 @@ fn open(queue: Arc<Mutex<Queue>>) -> Result<cpal::Stream, String> {
       move |out: &mut [f32], _| {
         let mut queue = queue.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         for frame in out.chunks_mut(channels) {
-          let sample = if queue.paused { 0.0 } else { queue.samples.pop_front().unwrap_or(0.0) };
-          frame.fill(sample);
+          let sample = if queue.paused { None } else { queue.samples.pop_front() };
+          queue.played += sample.is_some() as u64;
+          frame.fill(sample.unwrap_or(0.0));
         }
       },
       |error| eprintln!("audio output: {error}"),

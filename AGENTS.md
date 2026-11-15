@@ -7,7 +7,7 @@ Rust does the real work: model, player, library and the local server live in `sr
 ## Running it
 
 - `pnpm dev:web` runs the UI in a browser. Use it for UI work.
-- Rust builds and tests on Windows: run `win-sync` here (copies to `D:\src\wsl\yap`, profile in `~/.config/win-sync/yap.ignore`), then in PowerShell there `pnpm install`, `pnpm exec vp build`, and in `src-tauri` `cargo test --release` or `cargo build --release`. WSL lacks the system libraries to link Tauri.
+- Rust builds and tests on Windows: run `win-sync` here (copies to `D:\src\wsl\yap`, profile in `~/.config/win-sync/yap.ignore`), then in PowerShell there `pnpm install` and `pnpm tauri build --no-bundle` (both exes land in `src-tauri\target\release`), or `cargo test --release` in `src-tauri`. Plain `cargo build` leaves out Tauri's `custom-protocol` feature, so its windows load the dev server URL and stay blank. WSL lacks the system libraries to link Tauri.
 - Two binaries: `yap-app` is the tray app, `yap` the command that talks to it over `127.0.0.1` (port and token in `server.json` in the data folder).
 - Data: models, pieces, `library.db` and `server.json` in `%LOCALAPPDATA%\yap`, `~/Library/Application Support/yap`, `~/.local/share/yap`. Settings will go in the config folder (`%APPDATA%\yap`, `~/Library/Application Support/yap`, `~/.config/yap`).
 - Rust tests mark the spec rule they cover with a `// slug` comment above the test.

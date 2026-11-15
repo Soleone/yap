@@ -54,7 +54,8 @@ impl Engine {
       .collect();
     let hashes: Vec<String> = pieces.iter().map(|(_, hash)| hash.clone()).collect();
     self.library.add(text, source, &voice, &hashes)?;
-    let read = self.player.begin();
+    let texts = pieces.iter().map(|(piece, _)| piece.clone()).collect();
+    let read = self.player.begin(texts, &voice, &source.app);
     self.jobs.send(Job { read, voice, pieces }).map_err(|_| "the engine stopped".to_string())?;
     Ok(read)
   }
@@ -71,7 +72,7 @@ impl Engine {
   /// another read took over.
   fn generate(&self, model: &mut Option<Model>, job: &Job) -> Result<(), String> {
     let current = || self.player.current() == job.read;
-    for (piece, hash) in &job.pieces {
+    for (index, (piece, hash)) in job.pieces.iter().enumerate() {
       while current() && self.player.backlog() > AHEAD_SECS {
         std::thread::sleep(Duration::from_millis(100));
       }
@@ -79,7 +80,7 @@ impl Engine {
         return Ok(());
       }
       if let Some(audio) = self.library.read_piece(hash) {
-        self.player.push(job.read, &audio);
+        self.player.push(job.read, index, &audio);
         continue;
       }
       if model.is_none() {
@@ -92,7 +93,7 @@ impl Engine {
         if !current() {
           return Ok(());
         }
-        self.player.push(job.read, &chunk);
+        self.player.push(job.read, index, &chunk);
         audio.extend_from_slice(&chunk);
       }
       self.library.write_piece(hash, &audio)?;

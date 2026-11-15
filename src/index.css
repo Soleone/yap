@@ -136,3 +136,9 @@
     cursor: pointer;
   }
 }
+
+/* The popup window is transparent around its card. */
+html:has([data-popup]),
+html:has([data-popup]) body {
+  background: transparent;
+}

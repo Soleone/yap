@@ -1,6 +1,7 @@
 mod engine;
 mod library;
 mod player;
+mod popup;
 mod server;
 mod text;
 
@@ -29,6 +30,7 @@ pub fn run() {
 
   tauri::Builder::default()
     .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
+    .invoke_handler(tauri::generate_handler![popup::toggle_pause, popup::stop, popup::fit_popup])
     .on_window_event(|window, event| {
       if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
@@ -40,7 +42,9 @@ pub fn run() {
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
       let engine = engine::Engine::start(player.clone(), library);
-      server::start(&data, engine, player)?;
+      server::start(&data, engine, player.clone())?;
+      popup::start(app.handle().clone(), player.clone());
+      app.manage(player);
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
