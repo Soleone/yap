@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 const USAGE: &str = "usage:
   yap \"text\"            read the text aloud, and wait while it plays
   ... | yap             read stdin
+  yap --save ...        make the audio in the background without playing it;
+                        it plays from the library once ready
   yap --voice Maeve ... read in another voice
   yap --speed 1.2 ...   read faster or slower; the model's closest speed is used
   yap --app Firefox --title \"Docs\" --url https://... ...
@@ -45,6 +47,7 @@ fn run() -> Result<(), String> {
       "--" => words.extend(args.by_ref()),
       "--stop" => command = "stop",
       "--pause" => command = "pause",
+      "--save" => command = "save",
       "--voice" => voice = Some(args.next().ok_or("--voice needs a name")?),
       "--speed" => {
         let value = args.next().ok_or("--speed needs a number, like 1.2")?;
@@ -72,7 +75,7 @@ fn run() -> Result<(), String> {
   }
 
   let request = match command {
-    "speak" => {
+    "speak" | "save" => {
       let text = if !words.is_empty() {
         words.join(" ")
       } else if !std::io::stdin().is_terminal() {
@@ -86,7 +89,7 @@ fn run() -> Result<(), String> {
       if text.trim().is_empty() {
         return Ok(());
       }
-      serde_json::json!({ "command": "speak", "text": text, "voice": voice, "speed": speed, "source": source })
+      serde_json::json!({ "command": command, "text": text, "voice": voice, "speed": speed, "source": source })
     }
     command => serde_json::json!({ "command": command }),
   };

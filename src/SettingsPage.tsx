@@ -3,7 +3,7 @@ import { LoaderCircle, Play } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
-import { bridge, type CatalogVoice, type EngineStatus, type Model, type Settings } from "@/bridge";
+import { bridge, type EngineStatus, type Model, type Settings, type Voice } from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -26,23 +26,47 @@ const LANGUAGES: Record<string, string> = {
   de: "German",
   es: "Spanish",
   pt: "Portuguese",
+  it: "Italian",
+  ru: "Russian",
+  zh: "Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+  hi: "Hindi",
 };
 
-/** Voice, speed, model, popup and startup. Every change is saved at once. */
+const KEEP_DAYS = [7, 30, 90, 365, 0];
+
+/** The saved-reads choice that means the reading model and voice. */
+const SAME = "same";
+
+/** Voice, speed, model, saved reads, history, popup and startup. Every change is saved at once. */
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [models, setModels] = useState<Model[]>([]);
-  const [voices, setVoices] = useState<CatalogVoice[]>([]);
+  const [voices, setVoices] = useState<Record<string, Voice[]>>({});
   const [status, setStatus] = useState<EngineStatus>({ state: "ready" });
   const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
     void bridge.getSettings().then(setSettings);
     void bridge.models().then(setModels);
-    // Offline before the catalog was ever downloaded, only the chosen voice shows.
-    void bridge.voices().then(setVoices, () => {});
     void isEnabled().then(setAutostart);
   }, []);
+
+  // Offline before Phonon's catalog was ever downloaded, only the chosen voice shows.
+  const voicesOf = (id: string) =>
+    bridge.voices(id).then(
+      (list) => {
+        setVoices((known) => ({ ...known, [id]: list }));
+        return list;
+      },
+      () => [],
+    );
+  const readModel = settings?.model;
+  const saveModel = settings?.saveModel;
+  useEffect(() => {
+    for (const id of [readModel, saveModel]) if (id) void voicesOf(id);
+  }, [readModel, saveModel]);
 
   // Downloading a model can take a while, so its progress shows here.
   useEffect(() => {
@@ -61,10 +85,35 @@ export function SettingsPage() {
   const language = model.languages.includes(settings.language)
     ? settings.language
     : model.languages[0];
-  const voiceOptions = voices.filter((voice) => voice.language.startsWith(language));
-  if (!voiceOptions.some(({ name }) => name === settings.voice))
-    voiceOptions.unshift({ name: settings.voice, language, description: "" });
-  const description = voiceOptions.find(({ name }) => name === settings.voice)?.description;
+  const languages = [...new Set(models.flatMap((each) => each.languages))];
+  const languageModels = models.filter((each) => each.languages.includes(language));
+  const saving = models.find(({ id }) => id === settings.saveModel);
+
+  /** `current` when `id` has it in `code`, else the first voice that fits. */
+  const fitVoice = async (id: string, code: string, current: string) => {
+    const fitting = (await voicesOf(id)).filter((voice) => reads(voice, code));
+    return fitting.some(({ name }) => name === current) ? current : (fitting[0]?.name ?? current);
+  };
+  const chooseLanguage = async (code: string) => {
+    const reading = model.languages.includes(code)
+      ? model
+      : models.find((each) => each.languages.includes(code))!;
+    const keepsSaving = saving?.languages.includes(code);
+    change({
+      language: code,
+      model: reading.id,
+      voice: await fitVoice(reading.id, code, settings.voice),
+      saveModel: keepsSaving ? settings.saveModel : "",
+      saveVoice: keepsSaving ? await fitVoice(saving!.id, code, settings.saveVoice) : "",
+    });
+  };
+  const chooseModel = async (id: string) =>
+    change({ model: id, voice: await fitVoice(id, language, settings.voice) });
+  const chooseSaveModel = async (id: string) =>
+    id === SAME
+      ? change({ saveModel: "", saveVoice: "" })
+      : change({ saveModel: id, saveVoice: await fitVoice(id, language, settings.saveVoice) });
+
   const speeds = model.speeds.map(({ speed }) => speed);
   const speedIndex = closestIndex(speeds, settings.speed);
 
@@ -72,25 +121,26 @@ export function SettingsPage() {
     <div className="mx-auto w-full max-w-xl p-6">
       <FieldGroup>
         <FieldSet>
-          <ChoiceField
+          <VoiceField
             id="voice"
-            label="Voice"
+            voices={voices[model.id] ?? []}
+            language={language}
             value={settings.voice}
-            options={voiceOptions.map(({ name }) => ({ value: name, label: name }))}
             onChange={(voice) => change({ voice })}
-            description={description}
           />
-          <Field>
-            <FieldLabel htmlFor="speed">Speed {speeds[speedIndex].toFixed(1)}×</FieldLabel>
-            <Slider
-              id="speed"
-              min={0}
-              max={speeds.length - 1}
-              step={1}
-              value={speedIndex}
-              onValueChange={(index) => change({ speed: speeds[index as number] })}
-            />
-          </Field>
+          {speeds.length > 1 && (
+            <Field>
+              <FieldLabel htmlFor="speed">Speed {speeds[speedIndex].toFixed(1)}×</FieldLabel>
+              <Slider
+                id="speed"
+                min={0}
+                max={speeds.length - 1}
+                step={1}
+                value={speedIndex}
+                onValueChange={(index) => change({ speed: speeds[index as number] })}
+              />
+            </Field>
+          )}
           <div>
             <Button variant="outline" onClick={() => void bridge.preview()}>
               <Play data-icon="inline-start" />
@@ -102,28 +152,66 @@ export function SettingsPage() {
         <FieldSeparator />
         <FieldSet>
           <ChoiceField
+            id="language"
+            label="Language"
+            value={language}
+            options={languages.map((code) => ({ value: code, label: languageName(code) }))}
+            onChange={(code) => void chooseLanguage(code)}
+          />
+          <ChoiceField
             id="model"
             label="Model"
             value={model.id}
-            options={models.map(({ id, name }) => ({ value: id, label: name }))}
-            onChange={(id) => change({ model: id })}
-            description={`${model.sizeMb} MB · ${model.languages.map((code) => LANGUAGES[code] ?? code).join(", ")} · ${model.license}`}
+            options={modelOptions(languageModels)}
+            onChange={(id) => void chooseModel(id)}
+            description={modelDescription(model, language)}
           />
-          {model.languages.length > 1 && (
-            <ChoiceField
-              id="language"
-              label="Language"
-              value={language}
-              options={model.languages.map((code) => ({
-                value: code,
-                label: LANGUAGES[code] ?? code,
-              }))}
-              onChange={(code) => change({ language: code })}
-            />
-          )}
           {model.gated && <TokenField model={model} />}
           <ModelStatus status={status} />
         </FieldSet>
+
+        <FieldSeparator />
+        <FieldSet>
+          <ChoiceField
+            id="save-model"
+            label="Saved reads"
+            value={saving?.id ?? SAME}
+            options={[{ value: SAME, label: "Same as reading" }, ...modelOptions(languageModels)]}
+            onChange={(id) => void chooseSaveModel(id)}
+            description={
+              saving ? (
+                modelDescription(saving, language)
+              ) : (
+                <>
+                  <code>yap --save "text"</code> makes the audio in the background without playing
+                  it; it plays from the library once ready.
+                </>
+              )
+            }
+          />
+          {saving && (
+            <VoiceField
+              id="save-voice"
+              voices={voices[saving.id] ?? []}
+              language={language}
+              value={settings.saveVoice}
+              onChange={(saveVoice) => change({ saveVoice })}
+            />
+          )}
+        </FieldSet>
+
+        <FieldSeparator />
+        <ChoiceField
+          id="keep-days"
+          label="Keep reads"
+          value={String(settings.keepDays)}
+          options={KEEP_DAYS.map((days) => ({
+            value: String(days),
+            label: days === 0 ? "Forever" : `For ${days} days`,
+          }))}
+          onChange={(days) => change({ keepDays: Number(days) })}
+          description="Counted from the last play. Reads kept in the library stay either way."
+        />
 
         <FieldSeparator />
         <FieldSet>
@@ -169,6 +257,62 @@ export function SettingsPage() {
       </FieldGroup>
     </div>
   );
+}
+
+/** A model's voices that read `language`, with the chosen one's description. */
+function VoiceField({
+  id,
+  voices,
+  language,
+  value,
+  onChange,
+}: {
+  id: string;
+  voices: Voice[];
+  language: string;
+  value: string;
+  onChange: (voice: string) => void;
+}) {
+  const options = voices.filter((voice) => reads(voice, language));
+  if (!options.some(({ name }) => name === value))
+    options.unshift({ name: value, language, description: "" });
+  return (
+    <ChoiceField
+      id={id}
+      label="Voice"
+      value={value}
+      options={options.map(({ name }) => ({ value: name, label: name }))}
+      onChange={onChange}
+      description={options.find(({ name }) => name === value)?.description}
+    />
+  );
+}
+
+function reads(voice: Voice, language: string) {
+  return voice.language === "" || voice.language.startsWith(language);
+}
+
+function languageName(code: string) {
+  return LANGUAGES[code] ?? code;
+}
+
+/** Each model with what it downloads, so the disk it takes shows while choosing. */
+function modelOptions(models: Model[]) {
+  return models.map(({ id, name, sizeMb }) => ({
+    value: id,
+    label: `${name} · ${sizeMb < 1000 ? `${sizeMb} MB` : `${Math.round(sizeMb / 1000)} GB`}`,
+  }));
+}
+
+function modelDescription(model: Model, language: string) {
+  const others = model.languages.filter((code) => code !== language);
+  return [
+    others.length > 0 && `Also reads ${others.map(languageName).join(", ")}`,
+    model.gpu && "Needs an NVIDIA GPU and reads slower than real time, so it suits saved reads",
+    model.license,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** An optional hotkey that reads the selected text of any app. Click, then press the keys. */

@@ -1,14 +1,17 @@
 mod engine;
 mod grab;
 mod library;
+mod phonon;
 mod player;
 mod popup;
 mod registry;
 mod server;
 mod settings;
 mod text;
+mod worker;
 
-use engine::{CatalogVoice, Engine, Status};
+use engine::{Engine, Status};
+use phonon::VoiceInfo;
 use settings::{Settings, Store};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -74,6 +77,7 @@ pub fn run() {
       library_list,
       library_play,
       library_delete,
+      library_keep,
       set_hotkey,
       pause_hotkey,
       platform,
@@ -95,7 +99,7 @@ pub fn run() {
       }
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library.clone(), store.clone());
+      let engine = Engine::start(player.clone(), library.clone(), store.clone(), data.clone());
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
@@ -159,10 +163,10 @@ fn models() -> &'static [registry::Model] {
   registry::MODELS
 }
 
-/// Async so the first catalog download doesn't hold up the window.
+/// The voices of `model`. Async so the first catalog download doesn't hold up the window.
 #[tauri::command]
-async fn voices() -> Result<Vec<CatalogVoice>, String> {
-  engine::voices()
+async fn voices(model: String) -> Result<Vec<VoiceInfo>, String> {
+  engine::voices(registry::model(&model))
 }
 
 /// Reads a line in the voice and speed of the settings, without keeping it in the library.
@@ -213,6 +217,12 @@ fn library_delete(library: State<Arc<library::Library>>, player: State<player::P
     player.stop();
   }
   library.delete(id)
+}
+
+/// Keeps a read from pruning, or lets it be pruned again.
+#[tauri::command]
+fn library_keep(library: State<Arc<library::Library>>, id: i64, kept: bool) -> Result<(), String> {
+  library.keep(id, kept)
 }
 
 /// Reads the selected text of the app in front. With nothing selected, the hotkey stops what plays instead.

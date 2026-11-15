@@ -9,15 +9,20 @@ use std::sync::{Arc, Mutex};
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
   pub model: String,
-  /// For a model with several languages.
+  /// Models list by language; a model that doesn't read it reads its own first language.
   pub language: String,
   pub voice: String,
+  /// The model and voice `yap --save` makes reads in; an empty model means the reading model and voice.
+  pub save_model: String,
+  pub save_voice: String,
   /// A multiplier; reads use the model's offered speed closest to it.
   pub speed: f32,
   pub popup: PopupStyle,
   pub position: Position,
   /// Reads the selected text of any app, like `Ctrl+Alt+R`. Empty is off.
   pub hotkey: String,
+  /// Reads not played or kept for this many days are deleted; 0 keeps every read.
+  pub keep_days: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -41,19 +46,14 @@ impl Default for Settings {
       model: registry::MODELS[0].id.to_string(),
       language: "en".to_string(),
       voice: "Miles".to_string(),
+      save_model: String::new(),
+      save_voice: String::new(),
       speed: 1.0,
       popup: PopupStyle::Subtitles,
       position: Position::Bottom,
       hotkey: String::new(),
+      keep_days: 30,
     }
-  }
-}
-
-impl Settings {
-  /// The language reads use: the chosen one when the model has it, else the model's first.
-  pub fn language(&self) -> &str {
-    let languages = registry::model(&self.model).languages;
-    languages.iter().find(|&&code| code == self.language).unwrap_or(&languages[0])
   }
 }
 

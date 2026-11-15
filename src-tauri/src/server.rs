@@ -28,6 +28,14 @@ enum Command {
     #[serde(default)]
     source: Source,
   },
+  /// Makes the read in the background for the library, without playing it.
+  Save {
+    text: String,
+    voice: Option<String>,
+    speed: Option<f32>,
+    #[serde(default)]
+    source: Source,
+  },
   Stop,
   Pause,
 }
@@ -73,6 +81,9 @@ fn serve(stream: &TcpStream, token: &str, engine: &Engine, player: &Player) -> R
           Progress::Failed(error) => return Err(error),
         }
       }
+    }
+    Command::Save { text, voice, speed, source } => {
+      engine.save(&text, &source, engine.save_voice(voice, speed)).map(drop)
     }
     Command::Stop => {
       player.stop();
