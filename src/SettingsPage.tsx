@@ -5,6 +5,7 @@ import { ChoiceField } from "@/ChoiceField";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
 import { bridge, type CatalogVoice, type EngineStatus, type Model, type Settings } from "@/bridge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
   FieldContent,
@@ -18,7 +19,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 
 const LANGUAGES: Record<string, string> = {
   en: "English",
@@ -156,15 +156,15 @@ export function SettingsPage() {
         />
         <FieldSeparator />
         <Field orientation="horizontal">
-          <FieldContent>
-            <FieldLabel htmlFor="autostart">Start with the system</FieldLabel>
-            <FieldDescription>Yap waits in the tray, with the voice ready.</FieldDescription>
-          </FieldContent>
-          <Switch
+          <Checkbox
             id="autostart"
             checked={autostart}
             onCheckedChange={(on) => void (on ? enable() : disable()).then(() => setAutostart(on))}
           />
+          <FieldContent>
+            <FieldLabel htmlFor="autostart">Start with the system</FieldLabel>
+            <FieldDescription>Yap waits in the tray, with the voice ready.</FieldDescription>
+          </FieldContent>
         </Field>
       </FieldGroup>
     </div>
