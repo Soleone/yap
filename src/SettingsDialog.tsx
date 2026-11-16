@@ -226,9 +226,6 @@ function SettingsTabs() {
                 onChange={(id) => void chooseModel(id)}
                 description={modelDescription(model, language)}
               />
-            </FieldSet>
-            <FieldSeparator />
-            <FieldSet>
               <VoiceField
                 id="voice"
                 model={model.id}
@@ -239,7 +236,7 @@ function SettingsTabs() {
                 value={settings.voice}
                 onChange={(voice) => change({ voice })}
               />
-              {speeds.length > 1 && (
+              {speeds.length > 1 ? (
                 <Field>
                   <FieldLabel htmlFor="speed">Speed {speeds[speedIndex].toFixed(1)}×</FieldLabel>
                   <Slider
@@ -250,6 +247,18 @@ function SettingsTabs() {
                     value={speedIndex}
                     onValueChange={(index) => change({ speed: speeds[index as number] })}
                   />
+                  <FieldDescription>
+                    Every model reads at its closest step to this, so it carries over when you
+                    switch.
+                  </FieldDescription>
+                </Field>
+              ) : (
+                <Field>
+                  <FieldLabel>Speed</FieldLabel>
+                  <FieldDescription>
+                    {model.name} reads at one speed. Models with a speed control keep{" "}
+                    {settings.speed.toFixed(1)}×.
+                  </FieldDescription>
                 </Field>
               )}
               <div>
