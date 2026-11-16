@@ -2,11 +2,10 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Popup, PopupCard } from "@/Popup";
 import { LibraryPage } from "@/LibraryPage";
-import { SettingsPage } from "@/SettingsPage";
+import { SettingsDialog } from "@/SettingsDialog";
 import { UpdateBanner } from "@/UpdateBanner";
 import type { Now } from "@/bridge";
 import { ThemePicker } from "@/components/soleone/theme-picker";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function App() {
   if (isTauri() && getCurrentWindow().label === "popup")
@@ -18,29 +17,19 @@ export function App() {
   return isTauri() ? <Main /> : <Prototype />;
 }
 
-/** The library and the settings. */
+/** The library, with the settings a click away. */
 function Main() {
   return (
     <div className="min-h-svh bg-background text-foreground">
       <UpdateBanner />
-      <Tabs defaultValue="library">
-        <header className="grid grid-cols-3 items-center p-4">
-          <span className="font-heading font-medium">Yap</span>
-          <TabsList className="justify-self-center">
-            <TabsTrigger value="library">Library</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
-          <div className="justify-self-end">
-            <ThemePicker />
-          </div>
-        </header>
-        <TabsContent value="library">
-          <LibraryPage />
-        </TabsContent>
-        <TabsContent value="settings">
-          <SettingsPage />
-        </TabsContent>
-      </Tabs>
+      <header className="flex items-center justify-between p-4">
+        <span className="font-heading font-medium">Yap</span>
+        <div className="flex items-center gap-1">
+          <SettingsDialog />
+          <ThemePicker />
+        </div>
+      </header>
+      <LibraryPage />
     </div>
   );
 }
