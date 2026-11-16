@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3](https://github.com/Soleone/yap/compare/v0.1.2...v0.1.3) (2026-11-16)
+
+### Features
+
+* **speak:** read text in the voice of its language ([2793a08](https://github.com/Soleone/yap/commit/2793a08dedd6c70ad7ed8cb5872b85bdcc37ce20))
+
 ## [0.1.2](https://github.com/Soleone/yap/compare/v0.1.1...v0.1.2) (2026-11-15)
 
 ### Bug Fixes
