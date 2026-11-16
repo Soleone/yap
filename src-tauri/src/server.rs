@@ -2,7 +2,7 @@
 //! done. A speak holds the connection while it plays, and a dropped connection stops it, so killing the client
 //! stops the read.
 
-use crate::engine::Engine;
+use crate::engine::{Engine, Wanted};
 use crate::library::Source;
 use crate::player::{Player, Progress};
 use std::hash::{BuildHasher, Hasher};
@@ -23,16 +23,16 @@ struct Request {
 enum Command {
   Speak {
     text: String,
-    voice: Option<String>,
-    speed: Option<f32>,
+    #[serde(flatten)]
+    wanted: Wanted,
     #[serde(default)]
     source: Source,
   },
   /// Makes the read in the background for the library, without playing it.
   Save {
     text: String,
-    voice: Option<String>,
-    speed: Option<f32>,
+    #[serde(flatten)]
+    wanted: Wanted,
     #[serde(default)]
     source: Source,
   },
@@ -71,8 +71,8 @@ fn serve(stream: &TcpStream, token: &str, engine: &Engine, player: &Player) -> R
     return Err("wrong token".to_string());
   }
   match request.command {
-    Command::Speak { text, voice, speed, source } => {
-      let read = engine.speak(&text, Some(&source), engine.voice(voice, speed))?;
+    Command::Speak { text, wanted, source } => {
+      let read = engine.speak(&text, Some(&source), engine.voice(&text, wanted))?;
       stop_when_dropped(stream, player, read)?;
       loop {
         match player.progress(read) {
@@ -82,9 +82,7 @@ fn serve(stream: &TcpStream, token: &str, engine: &Engine, player: &Player) -> R
         }
       }
     }
-    Command::Save { text, voice, speed, source } => {
-      engine.save(&text, &source, engine.save_voice(voice, speed)).map(drop)
-    }
+    Command::Save { text, wanted, source } => engine.save(&text, &source, engine.save_voice(&text, wanted)).map(drop),
     Command::Stop => {
       player.stop();
       Ok(())

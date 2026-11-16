@@ -15,6 +15,8 @@ const USAGE: &str = "usage:
                         it plays from the library once ready
   yap --voice Maeve ... read in another voice
   yap --speed 1.2 ...   read faster or slower; the model's closest speed is used
+  yap --language de ... read in that language's voice from the settings,
+                        instead of telling the language from the text
   yap --app Firefox --title \"Docs\" --url https://... ...
                         where the text came from, kept with the read
   yap --source-env PLUCK ...
@@ -39,6 +41,7 @@ fn run() -> Result<(), String> {
   let mut args = std::env::args().skip(1);
   let mut voice = None;
   let mut speed = None;
+  let mut language = None;
   let mut source = serde_json::json!({});
   let mut words = Vec::new();
   let mut command = "speak";
@@ -49,6 +52,7 @@ fn run() -> Result<(), String> {
       "--pause" => command = "pause",
       "--save" => command = "save",
       "--voice" => voice = Some(args.next().ok_or("--voice needs a name")?),
+      "--language" => language = Some(args.next().ok_or("--language needs a code, like de")?),
       "--speed" => {
         let value = args.next().ok_or("--speed needs a number, like 1.2")?;
         speed = Some(value.parse::<f32>().map_err(|_| format!("--speed needs a number, like 1.2, not {value}"))?);
@@ -89,7 +93,9 @@ fn run() -> Result<(), String> {
       if text.trim().is_empty() {
         return Ok(());
       }
-      serde_json::json!({ "command": command, "text": text, "voice": voice, "speed": speed, "source": source })
+      serde_json::json!({
+        "command": command, "text": text, "voice": voice, "speed": speed, "language": language, "source": source
+      })
     }
     command => serde_json::json!({ "command": command }),
   };

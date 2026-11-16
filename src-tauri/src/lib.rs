@@ -1,5 +1,6 @@
 mod engine;
 mod grab;
+mod language;
 mod library;
 mod phonon;
 mod player;
@@ -10,7 +11,7 @@ mod settings;
 mod text;
 mod worker;
 
-use engine::{Engine, Status};
+use engine::{Engine, Status, Wanted};
 use phonon::VoiceInfo;
 use settings::{Settings, Store};
 use std::path::PathBuf;
@@ -180,10 +181,10 @@ async fn voices(model: String) -> Result<Vec<VoiceInfo>, String> {
   engine::voices(registry::model(&model))
 }
 
-/// Reads a line in the voice and speed of the settings, without keeping it in the library.
+/// Reads a line in the main voice and speed of the settings, without keeping it in the library.
 #[tauri::command]
 fn preview(engine: State<Engine>) -> Result<(), String> {
-  let voice = engine.voice(None, None);
+  let voice = engine.main_voice();
   let line = format!("Hi, I'm {}. This is how I sound reading to you.", voice.name);
   engine.speak(&line, None, voice).map(drop)
 }
@@ -246,7 +247,7 @@ fn read_selection(app: &AppHandle) {
   let engine = app.state::<Engine>();
   match selection {
     Ok((text, source)) if !text.trim().is_empty() => {
-      if let Err(error) = engine.speak(&text, Some(&source), engine.voice(None, None)) {
+      if let Err(error) = engine.speak(&text, Some(&source), engine.voice(&text, Wanted::default())) {
         eprintln!("reading the selection: {error}");
       }
     }

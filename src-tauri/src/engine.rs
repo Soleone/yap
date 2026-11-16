@@ -1,15 +1,16 @@
 //! The voice models, loaded once and kept, turning reads into audio for the player, and saved reads into pieces in
-//! the library. Reads and saved reads each have a thread and a model of their own, so a long save never holds up a
+//! the library. Reads and saved reads each have a thread and models of their own, so a long save never holds up a
 //! read.
 
+use crate::language;
 use crate::library::{self, Library, Sound, Source};
 use crate::phonon::{self, Phonon, VoiceInfo};
 use crate::player::Player;
 use crate::registry::{self, Model as ModelInfo, Runtime, Speed};
-use crate::settings::Store;
+use crate::settings::{Settings, Store};
 use crate::text;
 use crate::worker::Worker;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -54,6 +55,15 @@ impl Voice {
   }
 }
 
+/// What a read asks for instead of the settings.
+#[derive(Default, Deserialize)]
+pub struct Wanted {
+  /// Reads in this language's voice without telling it from the text.
+  pub language: Option<String>,
+  pub voice: Option<String>,
+  pub speed: Option<f32>,
+}
+
 /// What the settings window shows about the model.
 #[derive(Clone, Serialize)]
 #[serde(tag = "state", rename_all = "lowercase")]
@@ -84,8 +94,8 @@ enum Job {
     pieces: Vec<(String, String)>,
     from: usize,
   },
-  /// Loads the model and primes the voice ahead of the next read.
-  Prime(Voice),
+  /// Loads the models and primes the voices of every language ahead of the next read, and lets go of the rest.
+  Prime(Vec<Voice>),
 }
 
 impl Engine {
@@ -105,27 +115,40 @@ impl Engine {
     engine
   }
 
-  /// The voice in the settings, with `name` or `speed` instead when given.
-  pub fn voice(&self, name: Option<String>, speed: Option<f32>) -> Voice {
+  /// The voice in the settings for the language of `text`, with what `wanted` asks for instead.
+  pub fn voice(&self, text: &str, wanted: Wanted) -> Voice {
     let settings = self.settings.get();
-    Voice::new(&settings.model, &settings.language, name.unwrap_or(settings.voice), speed.unwrap_or(settings.speed))
+    let language = wanted.language.clone().unwrap_or_else(|| language::detect(&text::prepare(text), &settings));
+    reading_voice(&settings, language, wanted)
   }
 
-  /// The voice saved reads use: the one in the settings for them, or the reading voice when none is set.
-  pub fn save_voice(&self, name: Option<String>, speed: Option<f32>) -> Voice {
+  /// The voice of the main language in the settings.
+  pub fn main_voice(&self) -> Voice {
     let settings = self.settings.get();
-    if settings.save_model.is_empty() {
-      return self.voice(name, speed);
+    reading_voice(&settings, settings.language.clone(), Wanted::default())
+  }
+
+  /// The voice saved reads of `text` use: the one in the settings for them, or the reading voice when none is set or
+  /// the text's language has a voice of its own.
+  pub fn save_voice(&self, text: &str, wanted: Wanted) -> Voice {
+    let settings = self.settings.get();
+    let language = wanted.language.clone().unwrap_or_else(|| language::detect(&text::prepare(text), &settings));
+    if settings.save_model.is_empty() || settings.other_languages.iter().any(|other| other.language == language) {
+      return reading_voice(&settings, language, wanted);
     }
     // Empty when the model's voices couldn't be listed as it was chosen.
     let saved = Some(settings.save_voice).filter(|voice| !voice.is_empty());
-    let name = name.or(saved).unwrap_or(settings.voice);
-    Voice::new(&settings.save_model, &settings.language, name, speed.unwrap_or(settings.speed))
+    let name = wanted.voice.or(saved).unwrap_or(settings.voice);
+    Voice::new(&settings.save_model, &language, name, wanted.speed.unwrap_or(settings.speed))
   }
 
-  /// Gets the voice in the settings ready, after they changed.
+  /// Gets the voices in the settings ready, after they changed.
   pub fn prime(&self) {
-    self.jobs.send(Job::Prime(self.voice(None, None))).ok();
+    let settings = self.settings.get();
+    let languages = std::iter::once(settings.language.clone())
+      .chain(settings.other_languages.iter().map(|other| other.language.clone()));
+    let voices = languages.map(|language| reading_voice(&settings, language, Wanted::default())).collect();
+    self.jobs.send(Job::Prime(voices)).ok();
   }
 
   pub fn status(&self) -> Status {
@@ -180,9 +203,7 @@ impl Engine {
           let result = self.generate(&mut maker, read, &voice, &pieces, from);
           self.player.finish(read, result.err());
         }
-        Job::Prime(voice) => {
-          maker.prime(&voice).ok();
-        }
+        Job::Prime(voices) => maker.prime(voices),
       }
     }
   }
@@ -242,7 +263,7 @@ impl Engine {
       };
       let Some((id, text, sound)) = next else {
         // A GPU model holds gigabytes of video memory, so it goes while nothing waits.
-        maker.loaded = None;
+        maker.loaded.clear();
         match wake.recv_timeout(PRUNE_EVERY) {
           Ok(()) | Err(RecvTimeoutError::Timeout) => continue,
           Err(RecvTimeoutError::Disconnected) => return,
@@ -272,20 +293,30 @@ impl Engine {
   }
 }
 
-/// The model one thread uses, loaded on first use and switched when a voice needs another.
+/// The models one thread uses, each loaded on first use.
 struct Maker {
   models: PathBuf,
   /// Keeps the files of the reading and the saving workers apart.
   slot: &'static str,
   /// The settings window shows the reading model's status; the saving thread reports through the library instead.
   status: Option<Arc<Mutex<Status>>>,
-  loaded: Option<Loaded>,
+  loaded: Vec<Loaded>,
+  /// The voices of the settings, whose models stay loaded. Any other model goes once another loads, so replaying an
+  /// old read in a big model doesn't keep it, and the saving thread, which primes nothing, holds one at a time.
+  kept: Vec<Voice>,
 }
 
 struct Loaded {
   model: &'static str,
   language: &'static str,
   runtime: Loader,
+}
+
+impl Loaded {
+  /// Phonon loads per language; a Python model reads every language of its own.
+  fn serves(&self, voice: &Voice) -> bool {
+    self.model == voice.model.id && (voice.model.runtime != Runtime::Phonon || self.language == voice.language)
+  }
 }
 
 enum Loader {
@@ -295,7 +326,7 @@ enum Loader {
 
 impl Maker {
   fn new(models: PathBuf, slot: &'static str, status: Option<Arc<Mutex<Status>>>) -> Maker {
-    Maker { models, slot, status, loaded: None }
+    Maker { models, slot, status, loaded: Vec::new(), kept: Vec::new() }
   }
 
   fn set(&self, status: Status) {
@@ -304,36 +335,44 @@ impl Maker {
     }
   }
 
-  /// Loads the model for `voice` and primes the voice, keeping the status up to date.
-  fn prime(&mut self, voice: &Voice) -> Result<(), String> {
-    let result = self.ready(voice).map(drop);
-    self.set(match &result {
-      Ok(()) => Status::Ready,
-      Err(error) => Status::Failed { error: error.clone() },
+  /// Loads the models for `voices` and primes the voices, letting go of models none of them use and keeping the
+  /// status up to date. The status shows the first that failed.
+  fn prime(&mut self, voices: Vec<Voice>) {
+    self.kept = voices.clone();
+    self.let_go();
+    let failed = voices.iter().find_map(|voice| self.ready(voice).err());
+    self.set(match failed {
+      None => Status::Ready,
+      Some(error) => Status::Failed { error },
     });
-    result
   }
 
-  /// The model for `voice`, loading or switching it first when needed, with a Phonon voice primed.
+  /// The model for `voice`, loading it first when needed, with a Phonon voice primed.
   fn ready(&mut self, voice: &Voice) -> Result<&mut Loader, String> {
-    // Phonon loads per language; a Python model reads every language of its own.
-    let serves = |loaded: &Loaded| {
-      loaded.model == voice.model.id && (voice.model.runtime != Runtime::Phonon || loaded.language == voice.language)
+    let index = match self.loaded.iter().position(|loaded| loaded.serves(voice)) {
+      Some(index) => index,
+      None => {
+        self.let_go();
+        self.set(Status::Loading { model: voice.model.name.to_string() });
+        let runtime = match voice.model.runtime {
+          Runtime::Phonon => Loader::Phonon(Phonon::load(voice.model, voice.language)?),
+          Runtime::Python(script) => Loader::Python(Worker::start(&self.models, self.slot, script, voice.model)?),
+        };
+        self.loaded.push(Loaded { model: voice.model.id, language: voice.language, runtime });
+        self.loaded.len() - 1
+      }
     };
-    if self.loaded.as_ref().is_none_or(|loaded| !serves(loaded)) {
-      self.set(Status::Loading { model: voice.model.name.to_string() });
-      self.loaded = None;
-      let runtime = match voice.model.runtime {
-        Runtime::Phonon => Loader::Phonon(Phonon::load(voice.model, voice.language)?),
-        Runtime::Python(script) => Loader::Python(Worker::start(&self.models, self.slot, script, voice.model)?),
-      };
-      self.loaded = Some(Loaded { model: voice.model.id, language: voice.language, runtime });
-    }
-    let runtime = &mut self.loaded.as_mut().expect("loaded above").runtime;
+    let runtime = &mut self.loaded[index].runtime;
     if let Loader::Phonon(phonon) = runtime {
       phonon.session(&voice.name, voice.speed.control)?;
     }
     Ok(runtime)
+  }
+
+  /// Drops the models no voice of the settings uses.
+  fn let_go(&mut self) {
+    let kept = &self.kept;
+    self.loaded.retain(|loaded| kept.iter().any(|voice| loaded.serves(voice)));
   }
 
   /// Makes `piece` in `voice`, handing `push` the audio as it comes. Returns all of it, or `None` once `push` says
@@ -350,13 +389,10 @@ impl Maker {
       Err(error) => Status::Failed { error: error.clone() },
     });
     // A Python model that stopped would fail every piece after, so the next one starts it again.
-    let stopped = match &mut self.loaded {
-      Some(Loaded { runtime: Loader::Python(worker), .. }) => !worker.alive(),
-      _ => false,
-    };
-    if stopped {
-      self.loaded = None;
-    }
+    self.loaded.retain_mut(|loaded| match &mut loaded.runtime {
+      Loader::Python(worker) => worker.alive(),
+      Loader::Phonon(_) => true,
+    });
     result
   }
 
@@ -391,6 +427,16 @@ impl Maker {
   }
 }
 
+/// The voice `settings` read `language` in: its own when it has one, else the main one, with what `wanted` asks for
+/// instead. A language the main model doesn't read reads in the model's first.
+fn reading_voice(settings: &Settings, language: String, wanted: Wanted) -> Voice {
+  let (model, voice) = match settings.other_languages.iter().find(|other| other.language == language) {
+    Some(other) => (&other.model, &other.voice),
+    None => (&settings.model, &settings.voice),
+  };
+  Voice::new(model, &language, wanted.voice.unwrap_or_else(|| voice.clone()), wanted.speed.unwrap_or(settings.speed))
+}
+
 /// The sentences of `text` as `voice` reads them, each with the hash of its stored audio.
 fn pieces(text: &str, voice: &Voice) -> Vec<(String, String)> {
   let voice_id = voice.id();
@@ -422,5 +468,22 @@ pub fn voices(model: &ModelInfo) -> Result<Vec<VoiceInfo>, String> {
         })
         .collect(),
     ),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::settings::OtherLanguage;
+
+  // speak.language
+  #[test]
+  fn a_language_reads_in_its_own_voice_or_else_the_main_one() {
+    let german = OtherLanguage { language: "de".into(), model: "phonon-40m-de".into(), voice: "Anna".into() };
+    let settings = Settings { other_languages: vec![german], ..Settings::default() };
+    let voice = reading_voice(&settings, "de".into(), Wanted::default());
+    assert_eq!((voice.model.id, voice.language, voice.name.as_str()), ("phonon-40m-de", "de", "Anna"));
+    let voice = reading_voice(&settings, "fr".into(), Wanted::default());
+    assert_eq!((voice.model.id, voice.language, voice.name.as_str()), ("phonon-31m-en", "en", "Miles"));
   }
 }

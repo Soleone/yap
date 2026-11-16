@@ -27,6 +27,8 @@ export type Settings = {
   /** Models list by language; a model that doesn't read it reads its own first language. */
   language: string;
   voice: string;
+  /** Languages read in a model and voice of their own, told from the text of each read. */
+  otherLanguages: OtherLanguage[];
   /** What `yap --save` makes reads in; an empty model means the reading model and voice. */
   saveModel: string;
   saveVoice: string;
@@ -41,6 +43,8 @@ export type Settings = {
   /** Holds the models and their Python runtimes; empty is the data folder. Read when the app starts. */
   modelsFolder: string;
 };
+
+export type OtherLanguage = { language: string; model: string; voice: string };
 
 /** A model from the registry. */
 export type Model = {
@@ -102,7 +106,7 @@ export const bridge = {
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   models: () => invoke<Model[]>("models"),
   voices: (model: string) => invoke<Voice[]>("voices", { model }),
-  /** Reads a line in the voice and speed of the settings. */
+  /** Reads a line in the main voice and speed of the settings. */
   preview: () => invoke<void>("preview"),
   engineStatus: () => invoke<EngineStatus>("engine_status"),
   hasToken: () => invoke<boolean>("has_token"),

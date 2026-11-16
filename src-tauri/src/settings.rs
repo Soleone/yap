@@ -12,6 +12,9 @@ pub struct Settings {
   /// Models list by language; a model that doesn't read it reads its own first language.
   pub language: String,
   pub voice: String,
+  /// Languages read in a model and voice of their own, told from the text of each read. Text too short to tell, and
+  /// languages not here, read in the main ones above.
+  pub other_languages: Vec<OtherLanguage>,
   /// The model and voice `yap --save` makes reads in; an empty model means the reading model and voice.
   pub save_model: String,
   pub save_voice: String,
@@ -25,6 +28,13 @@ pub struct Settings {
   pub keep_days: u32,
   /// Holds the models and their Python runtimes; empty is the data folder. Read when the app starts.
   pub models_folder: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OtherLanguage {
+  pub language: String,
+  pub model: String,
+  pub voice: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -48,6 +58,7 @@ impl Default for Settings {
       model: registry::MODELS[0].id.to_string(),
       language: "en".to_string(),
       voice: "Miles".to_string(),
+      other_languages: Vec::new(),
       save_model: String::new(),
       save_voice: String::new(),
       speed: 1.0,

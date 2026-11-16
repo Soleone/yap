@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Play } from "lucide-react";
+import { LoaderCircle, Play, X } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
-import { bridge, type EngineStatus, type Model, type Settings, type Voice } from "@/bridge";
+import {
+  bridge,
+  type EngineStatus,
+  type Model,
+  type OtherLanguage,
+  type Settings,
+  type Voice,
+} from "@/bridge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -13,8 +20,10 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
   FieldSeparator,
   FieldSet,
+  FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -39,6 +48,9 @@ const KEEP_DAYS = [7, 30, 90, 365, 0];
 /** The saved-reads choice that means the reading model and voice. */
 const SAME = "same";
 
+/** The other-languages choice that adds nothing, shown until a language is picked. */
+const ADD = "add";
+
 /** Voice, speed, model, saved reads, history, popup and startup. Every change is saved at once. */
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -62,11 +74,13 @@ export function SettingsPage() {
       },
       () => [],
     );
-  const readModel = settings?.model;
-  const saveModel = settings?.saveModel;
+  const usedModels = settings
+    ? [settings.model, settings.saveModel, ...settings.otherLanguages.map(({ model }) => model)]
+    : [];
+  const usedKey = usedModels.join(" ");
   useEffect(() => {
-    for (const id of [readModel, saveModel]) if (id) void voicesOf(id);
-  }, [readModel, saveModel]);
+    for (const id of new Set(usedKey.split(" "))) if (id) void voicesOf(id);
+  }, [usedKey]);
 
   // Downloading a model can take a while, so its progress shows here.
   useEffect(() => {
@@ -88,6 +102,15 @@ export function SettingsPage() {
   const languages = [...new Set(models.flatMap((each) => each.languages))];
   const languageModels = models.filter((each) => each.languages.includes(language));
   const saving = models.find(({ id }) => id === settings.saveModel);
+  const others = settings.otherLanguages;
+  const addable = languages.filter(
+    (code) => code !== language && !others.some((other) => other.language === code),
+  );
+  const gated = models.filter(({ id, gated }) => gated && usedModels.includes(id));
+
+  /** The main model when it reads `code`, else the first that does. */
+  const modelFor = (code: string) =>
+    model.languages.includes(code) ? model : models.find((each) => each.languages.includes(code))!;
 
   /** `current` when `id` has it in `code`, else the first voice that fits. */
   const fitVoice = async (id: string, code: string, current: string) => {
@@ -95,20 +118,35 @@ export function SettingsPage() {
     return fitting.some(({ name }) => name === current) ? current : (fitting[0]?.name ?? current);
   };
   const chooseLanguage = async (code: string) => {
-    const reading = model.languages.includes(code)
-      ? model
-      : models.find((each) => each.languages.includes(code))!;
+    const reading = modelFor(code);
     const keepsSaving = saving?.languages.includes(code);
     change({
       language: code,
       model: reading.id,
       voice: await fitVoice(reading.id, code, settings.voice),
+      otherLanguages: others.filter((other) => other.language !== code),
       saveModel: keepsSaving ? settings.saveModel : "",
       saveVoice: keepsSaving ? await fitVoice(saving!.id, code, settings.saveVoice) : "",
     });
   };
   const chooseModel = async (id: string) =>
     change({ model: id, voice: await fitVoice(id, language, settings.voice) });
+  const addLanguage = async (code: string) => {
+    const reading = modelFor(code);
+    const voice = await fitVoice(reading.id, code, "");
+    change({ otherLanguages: [...others, { language: code, model: reading.id, voice }] });
+  };
+  const changeOther = (code: string, next: Partial<OtherLanguage>) =>
+    change({
+      otherLanguages: others.map((other) =>
+        other.language === code ? { ...other, ...next } : other,
+      ),
+    });
+  const chooseOtherModel = async (other: OtherLanguage, id: string) =>
+    changeOther(other.language, {
+      model: id,
+      voice: await fitVoice(id, other.language, other.voice),
+    });
   const chooseSaveModel = async (id: string) =>
     id === SAME
       ? change({ saveModel: "", saveVoice: "" })
@@ -166,12 +204,44 @@ export function SettingsPage() {
             onChange={(id) => void chooseModel(id)}
             description={modelDescription(model, language)}
           />
-          {model.gated && <TokenField model={model} />}
+          {gated.length > 0 && <TokenField models={gated} />}
           <ModelStatus status={status} />
           <ModelsFolderField
             chosen={settings.modelsFolder}
             onChange={(modelsFolder) => change({ modelsFolder })}
           />
+        </FieldSet>
+
+        <FieldSeparator />
+        <FieldSet>
+          <FieldLegend>Other languages</FieldLegend>
+          <FieldDescription>
+            Yap tells the language of each read from its text and reads it in that language's voice.
+            Text too short to tell reads in {languageName(language)}.
+          </FieldDescription>
+          {others.map((other) => (
+            <OtherLanguageField
+              key={other.language}
+              other={other}
+              models={models.filter((each) => each.languages.includes(other.language))}
+              voices={voices[other.model] ?? []}
+              onModel={(id) => void chooseOtherModel(other, id)}
+              onVoice={(voice) => changeOther(other.language, { voice })}
+              onRemove={() => change({ otherLanguages: others.filter((each) => each !== other) })}
+            />
+          ))}
+          {addable.length > 0 && (
+            <ChoiceField
+              id="add-language"
+              label="Add a language"
+              value={ADD}
+              options={[
+                { value: ADD, label: "Choose a language" },
+                ...addable.map((code) => ({ value: code, label: languageName(code) })),
+              ]}
+              onChange={(code) => code !== ADD && void addLanguage(code)}
+            />
+          )}
         </FieldSet>
 
         <FieldSeparator />
@@ -260,6 +330,50 @@ export function SettingsPage() {
         </Field>
       </FieldGroup>
     </div>
+  );
+}
+
+/** A language read in a model and voice of its own. */
+function OtherLanguageField({
+  other,
+  models,
+  voices,
+  onModel,
+  onVoice,
+  onRemove,
+}: {
+  other: OtherLanguage;
+  models: Model[];
+  voices: Voice[];
+  onModel: (id: string) => void;
+  onVoice: (voice: string) => void;
+  onRemove: () => void;
+}) {
+  const model = models.find(({ id }) => id === other.model) ?? models[0];
+  return (
+    <FieldGroup>
+      <div className="flex items-center justify-between gap-2">
+        <FieldTitle>{languageName(other.language)}</FieldTitle>
+        <Button variant="ghost" size="icon-sm" aria-label="Remove" onClick={onRemove}>
+          <X />
+        </Button>
+      </div>
+      <ChoiceField
+        id={`model-${other.language}`}
+        label="Model"
+        value={model.id}
+        options={modelOptions(models)}
+        onChange={onModel}
+        description={modelDescription(model, other.language)}
+      />
+      <VoiceField
+        id={`voice-${other.language}`}
+        voices={voices}
+        language={other.language}
+        value={other.voice}
+        onChange={onVoice}
+      />
+    </FieldGroup>
   );
 }
 
@@ -403,7 +517,7 @@ function HotkeyField({ hotkey, onChange }: { hotkey: string; onChange: (hotkey: 
 }
 
 /** Gated models download only with a token from an account that accepted their terms. */
-function TokenField({ model }: { model: Model }) {
+function TokenField({ models }: { models: Model[] }) {
   const [saved, setSaved] = useState(false);
   const [token, setToken] = useState("");
 
@@ -431,8 +545,8 @@ function TokenField({ model }: { model: Model }) {
         </Button>
       </div>
       <FieldDescription>
-        Accept the terms at huggingface.co/gradium/{model.id} while signed in, then paste a read
-        token from huggingface.co/settings/tokens.
+        Accept the terms at {models.map(({ id }) => `huggingface.co/gradium/${id}`).join(" and ")}{" "}
+        while signed in, then paste a read token from huggingface.co/settings/tokens.
       </FieldDescription>
     </Field>
   );
