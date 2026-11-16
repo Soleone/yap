@@ -2,6 +2,7 @@ mod engine;
 mod grab;
 mod language;
 mod library;
+mod models_folder;
 mod phonon;
 mod player;
 mod popup;
@@ -47,11 +48,9 @@ pub fn run() {
   let store = Store::open(&config);
   let chosen = store.get().models_folder;
   let models_dir = if chosen.is_empty() { data.clone() } else { PathBuf::from(chosen) };
-  // Before any thread starts, so nothing reads the environment while it changes. That's also why a new models
-  // folder waits for a restart. Models go in yap's own folder, not the shared Hugging Face cache, so removing yap
-  // removes them.
+  // SAFETY: before any thread starts, so nothing reads the environment while it changes.
   unsafe {
-    std::env::set_var("HF_HUB_CACHE", models_dir.join("models"));
+    models_folder::point_cache(&models_dir);
     std::env::set_var("HF_TOKEN_PATH", settings::token_file(&config));
   }
 
@@ -86,7 +85,7 @@ pub fn run() {
       set_token,
       models_folder,
       choose_folder,
-      restart,
+      move_models,
       library_list,
       library_play,
       library_delete,
@@ -111,14 +110,13 @@ pub fn run() {
       }
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models_dir.clone());
+      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models_dir);
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
       app.manage(store);
       app.manage(engine);
       app.manage(library);
-      app.manage(ModelsFolder(models_dir));
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
@@ -163,9 +161,11 @@ fn get_settings(store: State<Store>) -> Settings {
   store.get()
 }
 
-/// Saves the settings and gets their voice ready, so the next read starts at once.
+/// Saves the settings and gets their voice ready, so the next read starts at once. The models folder changes only by
+/// moving the models.
 #[tauri::command]
-fn set_settings(store: State<Store>, engine: State<Engine>, settings: Settings) -> Result<(), String> {
+fn set_settings(store: State<Store>, engine: State<Engine>, mut settings: Settings) -> Result<(), String> {
+  settings.models_folder = store.get().models_folder;
   store.set(settings)?;
   engine.prime();
   Ok(())
@@ -292,12 +292,9 @@ fn platform() -> &'static str {
   std::env::consts::OS
 }
 
-/// The models folder in use, which a new one in the settings replaces at the next start.
-struct ModelsFolder(PathBuf);
-
 #[tauri::command]
-fn models_folder(folder: State<ModelsFolder>) -> PathBuf {
-  folder.0.clone()
+fn models_folder(engine: State<Engine>) -> PathBuf {
+  engine.models_folder()
 }
 
 /// The folder picked in the system's folder dialog, which opens at `start`; none when it was cancelled. Async so the
@@ -307,7 +304,9 @@ async fn choose_folder(app: AppHandle, start: PathBuf) -> Option<PathBuf> {
   app.dialog().file().set_title("Choose a models folder").set_directory(start).blocking_pick_folder()?.into_path().ok()
 }
 
+/// Moves the models into `to` and loads them from there. Takes as long as copying them when `to` is on another drive.
 #[tauri::command]
-fn restart(app: AppHandle) {
-  app.restart();
+async fn move_models(engine: State<'_, Engine>, to: PathBuf) -> Result<(), String> {
+  let engine = engine.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || engine.move_models(to)).await.map_err(|error| error.to_string())?
 }

@@ -207,10 +207,7 @@ export function SettingsPage() {
           />
           {gated.length > 0 && <TokenField models={gated} />}
           <ModelStatus status={status} />
-          <ModelsFolderField
-            chosen={settings.modelsFolder}
-            onChange={(modelsFolder) => change({ modelsFolder })}
-          />
+          <ModelsFolderField />
         </FieldSet>
 
         <FieldSeparator />
@@ -554,23 +551,28 @@ function TokenField({ models }: { models: Model[] }) {
   );
 }
 
-/** Where models download. Yap switches to a new folder when it starts, so until then a restart is offered. */
-function ModelsFolderField({
-  chosen,
-  onChange,
-}: {
-  chosen: string;
-  onChange: (folder: string) => void;
-}) {
-  const [inUse, setInUse] = useState<string | null>(null);
+/** Where models download. Choosing another folder moves the downloaded ones there at once. */
+function ModelsFolderField() {
+  const [folder, setFolder] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => void bridge.modelsFolder().then(setInUse), []);
+  useEffect(() => void bridge.modelsFolder().then(setFolder), []);
 
-  if (inUse === null) return null;
-  const folder = chosen || inUse;
+  if (folder === null) return null;
   const choose = async () => {
     const picked = await bridge.chooseFolder(folder);
-    if (picked) onChange(picked);
+    if (!picked || picked === folder) return;
+    setMoving(true);
+    setError(null);
+    try {
+      await bridge.moveModels(picked);
+      setFolder(picked);
+    } catch (failure) {
+      setError(String(failure));
+    } finally {
+      setMoving(false);
+    }
   };
 
   return (
@@ -578,33 +580,36 @@ function ModelsFolderField({
       <FieldLabel htmlFor="models-folder">Models folder</FieldLabel>
       <div className="flex gap-2">
         <Input id="models-folder" readOnly value={folder} />
-        <Button variant="outline" onClick={() => void choose()}>
+        <Button variant="outline" disabled={moving} onClick={() => void choose()}>
           Choose…
         </Button>
       </div>
-      {folder === inUse ? (
-        <FieldDescription>
-          Models and their Python runtimes download here. Ones already downloaded stay where they
-          are.
-        </FieldDescription>
+      {moving ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
+          Moving the models to the new folder
+        </p>
+      ) : error ? (
+        <FieldError>
+          {error} The rest stayed here; choosing the folder again finishes it.
+        </FieldError>
       ) : (
-        <div className="flex items-center justify-between gap-2">
-          <FieldDescription>Yap switches to it when it restarts.</FieldDescription>
-          <Button variant="outline" size="sm" onClick={() => void bridge.restart()}>
-            Restart now
-          </Button>
-        </div>
+        <FieldDescription>
+          Models and their Python runtimes download here. Choosing another folder moves them there.
+        </FieldDescription>
       )}
     </Field>
   );
 }
 
 function ModelStatus({ status }: { status: EngineStatus }) {
-  if (status.state === "loading")
+  if (status.state === "moving" || status.state === "loading")
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
-        Getting {status.model} ready, which downloads it the first time
+        {status.state === "moving"
+          ? "Moving the models to the new folder"
+          : `Getting ${status.model} ready, which downloads it the first time`}
       </p>
     );
   if (status.state === "failed")

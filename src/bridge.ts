@@ -40,8 +40,6 @@ export type Settings = {
   hotkey: string;
   /** Reads not played or kept for this many days are deleted; 0 keeps every read. */
   keepDays: number;
-  /** Holds the models and their Python runtimes; empty is the data folder. Read when the app starts. */
-  modelsFolder: string;
 };
 
 export type OtherLanguage = { language: string; model: string; voice: string };
@@ -84,6 +82,7 @@ export type Read = {
 export type Voice = { name: string; language: string; description: string };
 
 export type EngineStatus =
+  | { state: "moving" }
   | { state: "loading"; model: string }
   | { state: "ready" }
   | { state: "failed"; error: string };
@@ -114,11 +113,12 @@ export const bridge = {
   hasToken: () => invoke<boolean>("has_token"),
   /** An empty token removes the saved one. */
   setToken: (token: string) => invoke<void>("set_token", { token }),
-  /** The models folder in use, which a new one in the settings replaces at the next start. */
+  /** The folder that holds the models and their Python runtimes. */
   modelsFolder: () => invoke<string>("models_folder"),
   /** The system's folder dialog, opened at `start`; `null` when cancelled. */
   chooseFolder: (start: string) => invoke<string | null>("choose_folder", { start }),
-  restart: () => invoke<void>("restart"),
+  /** Moves the models into `to` and uses it from then on; rejects with why when some couldn't move. */
+  moveModels: (to: string) => invoke<void>("move_models", { to }),
   /** Newest first. */
   libraryList: () => invoke<Read[]>("library_list"),
   /** Plays a read again from piece number `from`. */
