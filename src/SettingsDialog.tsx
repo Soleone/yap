@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Play, Plus, Settings2, Star, X } from "lucide-react";
+import {
+  AudioLines,
+  Cpu,
+  Gauge,
+  LoaderCircle,
+  Play,
+  Plus,
+  Settings2,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
+import { CloneVoiceDialog } from "@/CloneVoiceDialog";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
 import {
   bridge,
@@ -108,6 +120,8 @@ function SettingsTabs() {
       },
       () => [],
     );
+  /** After a voice was cloned or deleted, which every model that clones lists. */
+  const refreshVoices = () => void Promise.all(Object.keys(voices).map(voicesOf));
   const usedModels = settings
     ? [settings.model, settings.saveModel, ...settings.otherLanguages.map(({ model }) => model)]
     : [];
@@ -228,7 +242,8 @@ function SettingsTabs() {
               />
               <VoiceField
                 id="voice"
-                model={model.id}
+                model={model}
+                onVoicesChanged={refreshVoices}
                 favorites={favorites}
                 onFavorite={toggleFavorite}
                 voices={voices[model.id] ?? []}
@@ -292,6 +307,7 @@ function SettingsTabs() {
                 voices={voices[other.model] ?? []}
                 favorites={favorites}
                 onFavorite={toggleFavorite}
+                onVoicesChanged={refreshVoices}
                 onModel={(id) => void chooseOtherModel(other, id)}
                 onVoice={(voice) => changeOther(other.language, { voice })}
                 onRemove={() => change({ otherLanguages: others.filter((each) => each !== other) })}
@@ -329,7 +345,8 @@ function SettingsTabs() {
               {saving && (
                 <VoiceField
                   id="save-voice"
-                  model={saving.id}
+                  model={saving}
+                  onVoicesChanged={refreshVoices}
                   favorites={favorites}
                   onFavorite={toggleFavorite}
                   voices={voices[saving.id] ?? []}
@@ -415,6 +432,7 @@ function OtherLanguageField({
   voices,
   favorites,
   onFavorite,
+  onVoicesChanged,
   onModel,
   onVoice,
   onRemove,
@@ -425,6 +443,7 @@ function OtherLanguageField({
   voices: Voice[];
   favorites: string[];
   onFavorite: (key: string) => void;
+  onVoicesChanged: () => void;
   onModel: (id: string) => void;
   onVoice: (voice: string) => void;
   onRemove: () => void;
@@ -454,7 +473,8 @@ function OtherLanguageField({
         />
         <VoiceField
           id={`voice-${other.language}`}
-          model={model.id}
+          model={model}
+          onVoicesChanged={onVoicesChanged}
           favorites={favorites}
           onFavorite={onFavorite}
           voices={voices}
@@ -490,7 +510,8 @@ function AddLanguage({ languages, onAdd }: { languages: string[]; onAdd: (code: 
   );
 }
 
-/** A model's voices that read `language`, favorites first, with the chosen one's description. */
+/** A model's voices that read `language`, favorites first, with the chosen one's description. A model that clones
+ * offers to clone another and to delete a cloned one. */
 function VoiceField({
   id,
   model,
@@ -500,25 +521,36 @@ function VoiceField({
   favorites,
   onChange,
   onFavorite,
+  onVoicesChanged,
 }: {
   id: string;
-  model: string;
+  model: Model;
   voices: Voice[];
   language: string;
   value: string;
   favorites: string[];
   onChange: (voice: string) => void;
   onFavorite: (key: string) => void;
+  onVoicesChanged: () => void;
 }) {
+  const [deleting, setDeleting] = useState(false);
   const options = voices.filter((voice) => reads(voice, language));
-  if (!options.some(({ name }) => name === value))
-    options.unshift({ name: value, language, description: "" });
-  const isFavorite = (name: string) => favorites.includes(`${model}/${name}`);
+  const none = options.length === 0;
+  const chosen = options.find(({ name }) => name === value);
+  if (!chosen) options.unshift({ name: value, language, description: "", cloned: false });
+  const isFavorite = (name: string) => favorites.includes(`${model.id}/${name}`);
   const sorted = [
     ...options.filter(({ name }) => isFavorite(name)),
     ...options.filter(({ name }) => !isFavorite(name)),
   ];
   const favorite = isFavorite(value);
+  const remove = async () => {
+    setDeleting(false);
+    await bridge.deleteClonedVoice(value);
+    onVoicesChanged();
+    const left = (await bridge.voices(model.id)).filter((voice) => reads(voice, language));
+    onChange(left[0]?.name ?? "");
+  };
   return (
     <ChoiceField
       id={id}
@@ -529,17 +561,51 @@ function VoiceField({
         label: isFavorite(name) ? `★ ${name}` : name,
       }))}
       onChange={onChange}
-      description={options.find(({ name }) => name === value)?.description}
+      description={
+        none && model.clones
+          ? `${model.name} reads only in cloned voices; clone one with the button beside.`
+          : chosen?.description
+      }
       action={
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={favorite ? "Unfavorite voice" : "Favorite voice"}
-          aria-pressed={favorite}
-          onClick={() => onFavorite(`${model}/${value}`)}
-        >
-          <Star className={favorite ? "fill-current" : undefined} />
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label={favorite ? "Unfavorite voice" : "Favorite voice"}
+            aria-pressed={favorite}
+            onClick={() => onFavorite(`${model.id}/${value}`)}
+          >
+            <Star className={favorite ? "fill-current" : undefined} />
+          </Button>
+          {chosen?.cloned &&
+            (deleting ? (
+              <Button
+                variant="destructive"
+                onBlur={() => setDeleting(false)}
+                onClick={() => void remove()}
+              >
+                Delete {value}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={`Delete ${value}`}
+                onClick={() => setDeleting(true)}
+              >
+                <Trash2 />
+              </Button>
+            ))}
+          {model.clones && (
+            <CloneVoiceDialog
+              model={model}
+              onAdded={(name) => {
+                onVoicesChanged();
+                onChange(name);
+              }}
+            />
+          )}
+        </>
       }
     />
   );
@@ -555,21 +621,41 @@ function languageName(code: string) {
 
 /** Each model with what it downloads unless it's on disk, so the cost of choosing it shows. */
 function modelOptions(models: Model[], downloaded: string[]) {
-  return models.map(({ id, name, sizeMb }) => ({
-    value: id,
-    label: `${name} · ${
-      downloaded.includes(id)
+  return models.map((model) => ({
+    value: model.id,
+    label: `${model.name} · ${
+      downloaded.includes(model.id)
         ? "Downloaded"
-        : sizeMb < 1000
-          ? `${sizeMb} MB`
-          : `${Math.round(sizeMb / 1000)} GB`
+        : model.sizeMb < 1000
+          ? `${model.sizeMb} MB`
+          : `${Math.round(model.sizeMb / 1000)} GB`
     }`,
+    extra: <ModelIcons model={model} />,
   }));
+}
+
+/** What a model can do, beside its name in the list, each in its own column so the list reads as a table. */
+function ModelIcons({ model }: { model: Model }) {
+  const features = [
+    { Icon: AudioLines, label: "Clones voices", has: model.clones },
+    { Icon: Gauge, label: "Speed control", has: model.speeds.length > 1 },
+    { Icon: Cpu, label: "Needs an NVIDIA GPU", has: model.gpu },
+  ];
+  return (
+    <span className="ml-auto flex gap-1.5 pl-3 text-muted-foreground">
+      {features.map(({ Icon, label, has }) => (
+        <span key={label} title={has ? label : undefined} className={has ? undefined : "invisible"}>
+          <Icon aria-label={has ? label : undefined} aria-hidden={!has} />
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function modelDescription(model: Model, language: string) {
   const others = model.languages.filter((code) => code !== language);
   return [
+    model.clones && "Clones voices",
     others.length > 0 && `Also reads ${others.map(languageName).join(", ")}`,
     model.gpu && "Needs an NVIDIA GPU and reads slower than real time, so it suits saved reads",
     model.license,

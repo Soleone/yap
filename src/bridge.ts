@@ -62,6 +62,8 @@ export type Model = {
   gpu: boolean;
   /** From slowest to fastest. */
   speeds: { speed: number }[];
+  /** Reads in voices cloned from a clip, as well as its own. */
+  clones: boolean;
 };
 
 /** A read in the library. */
@@ -82,7 +84,7 @@ export type Read = {
 };
 
 /** An empty language means it reads every language of its model. */
-export type Voice = { name: string; language: string; description: string };
+export type Voice = { name: string; language: string; description: string; cloned: boolean };
 
 export type EngineStatus =
   | { state: "moving" }
@@ -109,6 +111,17 @@ export const bridge = {
   setSettings: (settings: Settings) => invoke<void>("set_settings", { settings }),
   models: () => invoke<Model[]>("models"),
   voices: (model: string) => invoke<Voice[]>("voices", { model }),
+  /** Keeps the clip a voice is about to be cloned from: 16-bit little-endian mono samples at 24 kHz. Rejects with
+   * why when it's too short. */
+  stageClip: (pcm: Uint8Array) => invoke<void>("stage_clip", pcm),
+  /** What the staged clip says, told by speech recognition in `model`, which clones. The recognition model downloads
+   * the first time and is deleted again unless `keep`. */
+  transcribeClip: (model: string, keep: boolean) =>
+    invoke<string>("transcribe_clip", { model, keep }),
+  /** Adds the staged clip as a voice every model that clones reads in. */
+  addClonedVoice: (name: string, transcript: string) =>
+    invoke<void>("add_cloned_voice", { name, transcript }),
+  deleteClonedVoice: (name: string) => invoke<void>("delete_cloned_voice", { name }),
   /** Reads a line in the main voice and speed of the settings. */
   preview: () => invoke<void>("preview"),
   engineStatus: () => invoke<EngineStatus>("engine_status"),

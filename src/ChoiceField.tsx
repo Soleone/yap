@@ -22,7 +22,8 @@ export function ChoiceField({
   id: string;
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  /** `extra` shows after the label in the list only, not in the closed select. */
+  options: { value: string; label: string; extra?: ReactNode }[];
   onChange: (value: string) => void;
   description?: ReactNode;
   /** A button beside the select, acting on the chosen option. */
@@ -46,6 +47,7 @@ export function ChoiceField({
               {options.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
+                  {option.extra}
                 </SelectItem>
               ))}
             </SelectGroup>
