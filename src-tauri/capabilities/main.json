@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window turns starting with the system on and off, and installs updates",
+  "description": "The main window turns starting with the system on and off, installs updates and opens links in the browser",
   "windows": ["main"],
-  "permissions": ["autostart:default", "updater:default", "process:allow-restart"]
+  "permissions": ["autostart:default", "updater:default", "process:allow-restart", "opener:default"]
 }

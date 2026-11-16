@@ -67,6 +67,7 @@ pub fn run() {
         .build(),
     )
     .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_process::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![START_HIDDEN])))
@@ -81,6 +82,8 @@ pub fn run() {
       preview,
       engine_status,
       prime,
+      cancel_load,
+      downloaded_models,
       has_token,
       set_token,
       models_folder,
@@ -199,6 +202,19 @@ fn engine_status(engine: State<Engine>) -> Status {
 #[tauri::command]
 fn prime(engine: State<Engine>) {
   engine.prime();
+}
+
+/// Stops the Python model that is getting ready and goes back to the models that were ready before. Returns the
+/// settings that brings.
+#[tauri::command]
+fn cancel_load(engine: State<Engine>) -> Result<Settings, String> {
+  engine.cancel()
+}
+
+/// The ids of the models that are downloaded, as far as yap has loaded them before.
+#[tauri::command]
+fn downloaded_models(engine: State<Engine>) -> Vec<String> {
+  engine.downloaded()
 }
 
 /// Whether a Hugging Face token is saved. The token itself never goes back to the window.

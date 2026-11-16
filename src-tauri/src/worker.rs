@@ -5,6 +5,7 @@ use crate::registry::{Model, Voice};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 /// The scripts, written next to each other into the models folder so each can import `serve`.
 const SCRIPTS: &[(&str, &str)] = &[
@@ -16,7 +17,7 @@ const SCRIPTS: &[(&str, &str)] = &[
 ];
 
 pub struct Worker {
-  child: Child,
+  child: Arc<Mutex<Child>>,
   input: ChildStdin,
   output: BufReader<ChildStdout>,
   /// Where the script writes each piece, and its log.
@@ -25,9 +26,9 @@ pub struct Worker {
 }
 
 impl Worker {
-  /// Starts `script` for `model` and waits until the model is loaded. The first start downloads Python, the model's
-  /// packages and its weights, which can take a long while. `slot` keeps the files of two workers apart.
-  pub fn start(models: &Path, slot: &str, script: &str, model: &Model) -> Result<Worker, String> {
+  /// Starts `script` for `model`, which loads it once `wait_ready` is called. The first start downloads Python, the
+  /// model's packages and its weights, which can take a long while. `slot` keeps the files of two workers apart.
+  pub fn spawn(models: &Path, slot: &str, script: &str, model: &Model) -> Result<Worker, String> {
     let folder = models.join("runtimes").join("workers");
     std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
     for (name, code) in SCRIPTS {
@@ -67,9 +68,18 @@ impl Worker {
     })?;
     let input = child.stdin.take().expect("stdin is piped");
     let output = BufReader::new(child.stdout.take().expect("stdout is piped"));
-    let mut worker = Worker { child, input, output, piece: folder.join(format!("{script}-{slot}.wav")), log };
-    worker.reply()?;
-    Ok(worker)
+    let child = Arc::new(Mutex::new(child));
+    Ok(Worker { child, input, output, piece: folder.join(format!("{script}-{slot}.wav")), log })
+  }
+
+  /// Waits until the model is loaded, or fails once the worker stopped.
+  pub fn wait_ready(&mut self) -> Result<(), String> {
+    self.reply()
+  }
+
+  /// Stops the worker from another thread, even while it loads.
+  pub fn stopper(&self) -> Stopper {
+    Stopper(self.child.clone())
   }
 
   /// Makes one piece and returns its 24 kHz audio.
@@ -93,7 +103,7 @@ impl Worker {
   }
 
   pub fn alive(&mut self) -> bool {
-    matches!(self.child.try_wait(), Ok(None))
+    matches!(lock(&self.child).try_wait(), Ok(None))
   }
 
   /// Waits for the script's next line: ready, done or an error.
@@ -119,7 +129,20 @@ impl Worker {
 
 impl Drop for Worker {
   fn drop(&mut self) {
-    self.child.kill().ok();
-    self.child.wait().ok();
+    Stopper(self.child.clone()).stop();
   }
+}
+
+pub struct Stopper(Arc<Mutex<Child>>);
+
+impl Stopper {
+  pub fn stop(&self) {
+    let mut child = lock(&self.0);
+    child.kill().ok();
+    child.wait().ok();
+  }
+}
+
+fn lock(child: &Mutex<Child>) -> std::sync::MutexGuard<'_, Child> {
+  child.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }

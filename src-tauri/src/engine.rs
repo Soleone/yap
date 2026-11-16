@@ -10,7 +10,7 @@ use crate::player::Player;
 use crate::registry::{self, Model as ModelInfo, Runtime, Speed};
 use crate::settings::{Settings, Store};
 use crate::text;
-use crate::worker::Worker;
+use crate::worker::{Stopper, Worker};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -66,10 +66,12 @@ pub struct Wanted {
 }
 
 /// What the settings window shows about the model.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Default, Serialize)]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Status {
-  Loading { model: String },
+  /// A cancellable load is a Python model starting, which may be downloading gigabytes.
+  Loading { model: String, cancellable: bool },
+  #[default]
   Ready,
   Failed { error: String },
 }
@@ -82,8 +84,17 @@ pub struct Engine {
   player: Player,
   library: Arc<Library>,
   settings: Store,
-  status: Arc<Mutex<Status>>,
+  shown: Arc<Shown>,
+  /// The last settings whose voices all got ready, which cancelling goes back to.
+  settled: Arc<Mutex<Option<Settings>>>,
   folder: Arc<Folder>,
+}
+
+/// What the settings window sees of the reading thread's models, and the Python model starting, which it can cancel.
+#[derive(Default)]
+struct Shown {
+  status: Mutex<Status>,
+  starting: Mutex<Option<Stopper>>,
 }
 
 /// Where models download, which every model is let go of for while they move to another folder.
@@ -120,8 +131,9 @@ enum Job {
     pieces: Vec<(String, String)>,
     from: usize,
   },
-  /// Loads the models and primes the voices of every language ahead of the next read, and lets go of the rest.
-  Prime(Vec<Voice>),
+  /// Loads the models and primes the voices of every language in the settings ahead of the next read, and lets go of
+  /// the rest.
+  Prime,
 }
 
 impl Engine {
@@ -131,13 +143,21 @@ impl Engine {
   pub fn start(player: Player, library: Arc<Library>, settings: Store, models: PathBuf) -> Engine {
     let (jobs, job_rx) = channel();
     let (saves, save_rx) = channel();
-    let status = Arc::new(Mutex::new(Status::Ready));
     let folder = Arc::new(Folder {
       state: Mutex::new(FolderState { path: models, moving: false }),
       settled: Condvar::new(),
       lease: Arc::new(()),
     });
-    let engine = Engine { jobs, saves, player, library, settings, status, folder };
+    let engine = Engine {
+      jobs,
+      saves,
+      player,
+      library,
+      settings,
+      shown: Arc::default(),
+      settled: Arc::default(),
+      folder,
+    };
     let reader = engine.clone();
     std::thread::spawn(move || reader.read(job_rx));
     let saver = engine.clone();
@@ -175,11 +195,30 @@ impl Engine {
 
   /// Gets the voices in the settings ready, after they changed.
   pub fn prime(&self) {
-    let settings = self.settings.get();
-    let languages = std::iter::once(settings.language.clone())
-      .chain(settings.other_languages.iter().map(|other| other.language.clone()));
-    let voices = languages.map(|language| reading_voice(&settings, language, Wanted::default())).collect();
-    self.jobs.send(Job::Prime(voices)).ok();
+    self.jobs.send(Job::Prime).ok();
+  }
+
+  /// Stops the Python model that is starting and goes back to the models and voices of the settings that were last
+  /// ready, or the default ones. Returns the settings.
+  pub fn cancel(&self) -> Result<Settings, String> {
+    let ready = lock(&self.settled).clone().unwrap_or_default();
+    let mut settings = self.settings.get();
+    settings.language = ready.language;
+    settings.model = ready.model;
+    settings.voice = ready.voice;
+    settings.other_languages = ready.other_languages;
+    self.settings.set(settings.clone())?;
+    // Queued before the stop, so the reading thread loads them right after the start fails.
+    self.prime();
+    if let Some(starting) = lock(&self.shown.starting).take() {
+      starting.stop();
+    }
+    Ok(settings)
+  }
+
+  /// The ids of the models in the models folder that loaded before.
+  pub fn downloaded(&self) -> Vec<String> {
+    models_folder::downloaded(&self.models_folder())
   }
 
   pub fn models_folder(&self) -> PathBuf {
@@ -227,7 +266,7 @@ impl Engine {
   }
 
   pub fn status(&self) -> Status {
-    self.status.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    lock(&self.shown.status).clone()
   }
 
   /// Stops what plays and starts reading `text`, recorded in the library when it has a `source`. Returns the
@@ -271,14 +310,19 @@ impl Engine {
   }
 
   fn read(self, jobs: Receiver<Job>) {
-    let mut maker = Maker::new(self.folder.clone(), "read", Some(self.status.clone()));
+    let mut maker = Maker::new(self.folder.clone(), "read", Some(self.shown.clone()));
     for job in jobs {
       match job {
         Job::Speak { read, voice, pieces, from } => {
           let result = self.generate(&mut maker, read, &voice, &pieces, from);
           self.player.finish(read, result.err());
         }
-        Job::Prime(voices) => maker.prime(voices),
+        Job::Prime => {
+          let settings = self.settings.get();
+          if maker.prime(settings_voices(&settings)) {
+            *lock(&self.settled) = Some(settings);
+          }
+        }
       }
     }
   }
@@ -374,7 +418,7 @@ struct Maker {
   /// Keeps the files of the reading and the saving workers apart.
   slot: &'static str,
   /// The settings window shows the reading model's status; the saving thread reports through the library instead.
-  status: Option<Arc<Mutex<Status>>>,
+  shown: Option<Arc<Shown>>,
   loaded: Vec<Loaded>,
   /// The voices of the settings, whose models stay loaded. Any other model goes once another loads, so replaying an
   /// old read in a big model doesn't keep it, and the saving thread, which primes nothing, holds one at a time.
@@ -401,26 +445,28 @@ enum Loader {
 }
 
 impl Maker {
-  fn new(folder: Arc<Folder>, slot: &'static str, status: Option<Arc<Mutex<Status>>>) -> Maker {
-    Maker { folder, slot, status, loaded: Vec::new(), kept: Vec::new() }
+  fn new(folder: Arc<Folder>, slot: &'static str, shown: Option<Arc<Shown>>) -> Maker {
+    Maker { folder, slot, shown, loaded: Vec::new(), kept: Vec::new() }
   }
 
   fn set(&self, status: Status) {
-    if let Some(shared) = &self.status {
-      *shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = status;
+    if let Some(shown) = &self.shown {
+      *lock(&shown.status) = status;
     }
   }
 
   /// Loads the models for `voices` and primes the voices, letting go of models none of them use and keeping the
-  /// status up to date. The status shows the first that failed.
-  fn prime(&mut self, voices: Vec<Voice>) {
+  /// status up to date. The status shows the first that failed. Returns whether all got ready.
+  fn prime(&mut self, voices: Vec<Voice>) -> bool {
     self.kept = voices.clone();
     self.let_go();
     let failed = voices.iter().find_map(|voice| self.ready(voice).err());
+    let ready = failed.is_none();
     self.set(match failed {
       None => Status::Ready,
       Some(error) => Status::Failed { error },
     });
+    ready
   }
 
   /// The model for `voice`, loading it first when needed, with a Phonon voice primed.
@@ -430,11 +476,13 @@ impl Maker {
       Some(index) => index,
       None => {
         self.let_go();
-        self.set(Status::Loading { model: voice.model.name.to_string() });
+        self.set(Status::Loading { model: voice.model.name.to_string(), cancellable: false });
         let runtime = match voice.model.runtime {
           Runtime::Phonon => Loader::Phonon(Phonon::load(voice.model, voice.language)?),
-          Runtime::Python(script) => Loader::Python(Worker::start(&models, self.slot, script, voice.model)?),
+          Runtime::Python(script) => Loader::Python(self.start(&models, script, voice.model)?),
         };
+        // Only the settings window's label depends on it.
+        models_folder::mark_downloaded(&models, voice.model.id).ok();
         self.loaded.push(Loaded { model: voice.model.id, language: voice.language, runtime, _lease: lease });
         self.loaded.len() - 1
       }
@@ -444,6 +492,20 @@ impl Maker {
       phonon.session(&voice.name, voice.speed.control)?;
     }
     Ok(runtime)
+  }
+
+  /// Starts a Python model, which the settings window can cancel until it is ready.
+  fn start(&self, models: &std::path::Path, script: &str, model: &'static ModelInfo) -> Result<Worker, String> {
+    let mut worker = Worker::spawn(models, self.slot, script, model)?;
+    if let Some(shown) = &self.shown {
+      *lock(&shown.starting) = Some(worker.stopper());
+    }
+    self.set(Status::Loading { model: model.name.to_string(), cancellable: true });
+    let ready = worker.wait_ready();
+    if let Some(shown) = &self.shown {
+      lock(&shown.starting).take();
+    }
+    ready.map(|()| worker)
   }
 
   /// Drops the models no voice of the settings uses.
@@ -502,6 +564,18 @@ impl Maker {
       }
     }
   }
+}
+
+/// The voices of every language in `settings`.
+fn settings_voices(settings: &Settings) -> Vec<Voice> {
+  std::iter::once(settings.language.clone())
+    .chain(settings.other_languages.iter().map(|other| other.language.clone()))
+    .map(|language| reading_voice(settings, language, Wanted::default()))
+    .collect()
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+  mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// The voice `settings` read `language` in: its own when it has one, else the main one, with what `wanted` asks for

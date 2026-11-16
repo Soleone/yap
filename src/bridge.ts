@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 
@@ -83,7 +84,8 @@ export type Voice = { name: string; language: string; description: string };
 
 export type EngineStatus =
   | { state: "moving" }
-  | { state: "loading"; model: string }
+  /** Cancellable while a Python model starts, which may download gigabytes. */
+  | { state: "loading"; model: string; cancellable: boolean }
   | { state: "ready" }
   | { state: "failed"; error: string };
 
@@ -110,6 +112,12 @@ export const bridge = {
   engineStatus: () => invoke<EngineStatus>("engine_status"),
   /** Loads the voices of the settings again, after one failed. */
   prime: () => invoke<void>("prime"),
+  /** Stops the model getting ready and goes back to the models that were ready; resolves to the settings that brings. */
+  cancelLoad: () => invoke<Settings>("cancel_load"),
+  /** The ids of the models yap has loaded before, so they are on disk. */
+  downloadedModels: () => invoke<string[]>("downloaded_models"),
+  /** Opens a web page in the system's browser. */
+  openUrl: (url: string) => openUrl(url),
   hasToken: () => invoke<boolean>("has_token"),
   /** An empty token removes the saved one. */
   setToken: (token: string) => invoke<void>("set_token", { token }),

@@ -58,6 +58,7 @@ export function SettingsPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [voices, setVoices] = useState<Record<string, Voice[]>>({});
   const [status, setStatus] = useState<EngineStatus>({ state: "ready" });
+  const [downloaded, setDownloaded] = useState<string[]>([]);
   const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export function SettingsPage() {
     const timer = setInterval(() => void bridge.engineStatus().then(setStatus), 1000);
     return () => clearInterval(timer);
   }, []);
+  useEffect(() => void bridge.downloadedModels().then(setDownloaded), [status.state]);
 
   if (!settings || models.length === 0) return null;
 
@@ -201,12 +203,15 @@ export function SettingsPage() {
             id="model"
             label="Model"
             value={model.id}
-            options={modelOptions(languageModels)}
+            options={modelOptions(languageModels, downloaded)}
             onChange={(id) => void chooseModel(id)}
             description={modelDescription(model, language)}
           />
           {gated.length > 0 && <TokenField models={gated} />}
-          <ModelStatus status={status} />
+          <ModelStatus
+            status={status}
+            onCancel={() => void bridge.cancelLoad().then(setSettings)}
+          />
           <ModelsFolderField />
         </FieldSet>
 
@@ -222,6 +227,7 @@ export function SettingsPage() {
               key={other.language}
               other={other}
               models={models.filter((each) => each.languages.includes(other.language))}
+              downloaded={downloaded}
               voices={voices[other.model] ?? []}
               onModel={(id) => void chooseOtherModel(other, id)}
               onVoice={(voice) => changeOther(other.language, { voice })}
@@ -248,7 +254,10 @@ export function SettingsPage() {
             id="save-model"
             label="Saved reads"
             value={saving?.id ?? SAME}
-            options={[{ value: SAME, label: "Same as reading" }, ...modelOptions(languageModels)]}
+            options={[
+              { value: SAME, label: "Same as reading" },
+              ...modelOptions(languageModels, downloaded),
+            ]}
             onChange={(id) => void chooseSaveModel(id)}
             description={
               saving ? (
@@ -336,6 +345,7 @@ export function SettingsPage() {
 function OtherLanguageField({
   other,
   models,
+  downloaded,
   voices,
   onModel,
   onVoice,
@@ -343,6 +353,7 @@ function OtherLanguageField({
 }: {
   other: OtherLanguage;
   models: Model[];
+  downloaded: string[];
   voices: Voice[];
   onModel: (id: string) => void;
   onVoice: (voice: string) => void;
@@ -361,7 +372,7 @@ function OtherLanguageField({
         id={`model-${other.language}`}
         label="Model"
         value={model.id}
-        options={modelOptions(models)}
+        options={modelOptions(models, downloaded)}
         onChange={onModel}
         description={modelDescription(model, other.language)}
       />
@@ -413,11 +424,17 @@ function languageName(code: string) {
   return LANGUAGES[code] ?? code;
 }
 
-/** Each model with what it downloads, so the disk it takes shows while choosing. */
-function modelOptions(models: Model[]) {
+/** Each model with what it downloads unless it's on disk, so the cost of choosing it shows. */
+function modelOptions(models: Model[], downloaded: string[]) {
   return models.map(({ id, name, sizeMb }) => ({
     value: id,
-    label: `${name} · ${sizeMb < 1000 ? `${sizeMb} MB` : `${Math.round(sizeMb / 1000)} GB`}`,
+    label: `${name} · ${
+      downloaded.includes(id)
+        ? "Downloaded"
+        : sizeMb < 1000
+          ? `${sizeMb} MB`
+          : `${Math.round(sizeMb / 1000)} GB`
+    }`,
   }));
 }
 
@@ -544,8 +561,9 @@ function TokenField({ models }: { models: Model[] }) {
         </Button>
       </div>
       <FieldDescription>
-        Accept the terms at {models.map(({ id }) => `huggingface.co/gradium/${id}`).join(" and ")}{" "}
-        while signed in, then paste a read token from huggingface.co/settings/tokens.
+        <Linked
+          text={`Accept the terms at ${models.map(({ id }) => `huggingface.co/gradium/${id}`).join(" and ")} while signed in, then paste a read token from huggingface.co/settings/tokens.`}
+        />
       </FieldDescription>
     </Field>
   );
@@ -602,26 +620,59 @@ function ModelsFolderField() {
   );
 }
 
-function ModelStatus({ status }: { status: EngineStatus }) {
+function ModelStatus({ status, onCancel }: { status: EngineStatus; onCancel: () => void }) {
   if (status.state === "moving" || status.state === "loading")
     return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
-        {status.state === "moving"
-          ? "Moving the models to the new folder"
-          : `Getting ${status.model} ready, which downloads it the first time`}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
+          {status.state === "moving"
+            ? "Moving the models to the new folder"
+            : `Getting ${status.model} ready, which downloads it the first time`}
+        </p>
+        {status.state === "loading" && status.cancellable && (
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
     );
   if (status.state === "failed")
     return (
       <div className="flex items-start justify-between gap-2">
-        <FieldError>{status.error}</FieldError>
+        <FieldError>
+          <Linked text={status.error} />
+        </FieldError>
         <Button variant="outline" size="sm" onClick={() => void bridge.prime()}>
           Try again
         </Button>
       </div>
     );
   return null;
+}
+
+/** Web addresses written without a scheme, like huggingface.co/settings/tokens. */
+const WEB_ADDRESS = /\b((?:[a-z0-9-]+\.)+[a-z]{2,}\/[\w./-]*[\w/])/gi;
+
+/** `text` with each web address in it opening in the browser. */
+function Linked({ text }: { text: string }) {
+  return text.split(WEB_ADDRESS).map((part, index) =>
+    index % 2 === 0 ? (
+      part
+    ) : (
+      <a
+        key={index}
+        href={`https://${part}`}
+        className="underline underline-offset-4"
+        onClick={(event) => {
+          event.preventDefault();
+          void bridge.openUrl(`https://${part}`);
+        }}
+      >
+        {part}
+      </a>
+    ),
+  );
 }
 
 function closestIndex(values: number[], target: number) {
