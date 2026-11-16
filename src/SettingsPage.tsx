@@ -284,7 +284,7 @@ export function SettingsPage() {
         <FieldSeparator />
         <ChoiceField
           id="keep-days"
-          label="Keep reads"
+          label="Keep audio files"
           value={String(settings.keepDays)}
           options={KEEP_DAYS.map((days) => ({
             value: String(days),
