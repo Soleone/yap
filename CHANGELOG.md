@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.4](https://github.com/Soleone/yap/compare/v0.1.3...v0.1.4) (2026-11-16)
+
+### Features
+
+* **settings:** explain gated model failures and offer retry ([4826ecc](https://github.com/Soleone/yap/commit/4826ecc39af8f179a6b288fb7850176274916de8))
+
+### Bug Fixes
+
+* **update:** recheck for updates when the window gains focus ([55785b6](https://github.com/Soleone/yap/commit/55785b61a9234ddd1734c97ea91462dd946eb50f))
+
 ## [0.1.3](https://github.com/Soleone/yap/compare/v0.1.2...v0.1.3) (2026-11-16)
 
 ### Features
