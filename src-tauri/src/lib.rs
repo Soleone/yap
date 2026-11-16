@@ -81,6 +81,7 @@ pub fn run() {
       voices,
       preview,
       engine_status,
+      prime,
       has_token,
       set_token,
       models_folder,
@@ -192,6 +193,12 @@ fn preview(engine: State<Engine>) -> Result<(), String> {
 #[tauri::command]
 fn engine_status(engine: State<Engine>) -> Status {
   engine.status()
+}
+
+/// Gets the voices of the settings ready again, after loading one failed.
+#[tauri::command]
+fn prime(engine: State<Engine>) {
+  engine.prime();
 }
 
 /// Whether a Hugging Face token is saved. The token itself never goes back to the window.

@@ -607,7 +607,15 @@ function ModelStatus({ status }: { status: EngineStatus }) {
         Getting {status.model} ready, which downloads it the first time
       </p>
     );
-  if (status.state === "failed") return <FieldError>{status.error}</FieldError>;
+  if (status.state === "failed")
+    return (
+      <div className="flex items-start justify-between gap-2">
+        <FieldError>{status.error}</FieldError>
+        <Button variant="outline" size="sm" onClick={() => void bridge.prime()}>
+          Try again
+        </Button>
+      </div>
+    );
   return null;
 }
 

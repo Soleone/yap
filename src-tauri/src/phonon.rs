@@ -19,10 +19,25 @@ fn error(error: ptts::Error) -> String {
   error.to_string()
 }
 
+/// A gated download says what to do about it in a line. `ptts` hands over Hugging Face's answer only as text, so the
+/// error code in it tells a missing token from terms not yet accepted.
+fn fetch_error(model: &Model, failure: ptts::Error) -> String {
+  let text = failure.to_string();
+  if !text.contains("GatedRepo") {
+    return text;
+  }
+  let repo = model.source.trim_start_matches("hf://").split('@').next().unwrap_or_default();
+  if text.contains("authorized list") {
+    format!("Accept the terms at huggingface.co/{repo} with the account of your token, then try again")
+  } else {
+    format!("{} is gated: save a Hugging Face token in the settings, then try again", model.name)
+  }
+}
+
 impl Phonon {
   pub fn load(model: &Model, language: &str) -> Result<Phonon, String> {
-    let checkpoint =
-      Checkpoint::locate(model.source, ResolveOptions { quant: Quant::Q80, weights: None }).map_err(error)?;
+    let checkpoint = Checkpoint::locate(model.source, ResolveOptions { quant: Quant::Q80, weights: None })
+      .map_err(|failure| fetch_error(model, failure))?;
     let mut synth =
       checkpoint.builder(Lang::from_str(language).map_err(error)?).device(DeviceKind::Cpu).build().map_err(error)?;
     checkpoint.register_voices(&mut synth);
@@ -64,4 +79,34 @@ pub fn voices() -> Result<Vec<VoiceInfo>, String> {
       })
       .collect(),
   )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::registry;
+
+  fn fetch_failure(answer: &str) -> ptts::Error {
+    ptts::Error::Io(std::io::Error::other(format!(
+      "cannot fetch `config.json` from hf://gradium/phonon-40m-de: {answer}"
+    )))
+  }
+
+  // settings.token
+  #[test]
+  fn a_gated_download_says_what_to_do() {
+    let german = registry::model("phonon-40m-de");
+    let refused = fetch_failure("Forbidden: you are not in the authorized list. (error_code=GatedRepo)");
+    assert_eq!(
+      fetch_error(german, refused),
+      "Accept the terms at huggingface.co/gradium/phonon-40m-de with the account of your token, then try again"
+    );
+    let anonymous = fetch_failure("Unauthorized: you must be authenticated. (error_code=GatedRepo)");
+    assert_eq!(
+      fetch_error(german, anonymous),
+      "Phonon 40M is gated: save a Hugging Face token in the settings, then try again"
+    );
+    let offline = fetch_failure("connection refused");
+    assert!(fetch_error(german, offline).ends_with("connection refused"));
+  }
 }

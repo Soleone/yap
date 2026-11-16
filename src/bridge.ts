@@ -109,6 +109,8 @@ export const bridge = {
   /** Reads a line in the main voice and speed of the settings. */
   preview: () => invoke<void>("preview"),
   engineStatus: () => invoke<EngineStatus>("engine_status"),
+  /** Loads the voices of the settings again, after one failed. */
+  prime: () => invoke<void>("prime"),
   hasToken: () => invoke<boolean>("has_token"),
   /** An empty token removes the saved one. */
   setToken: (token: string) => invoke<void>("set_token", { token }),
