@@ -4,6 +4,7 @@
 
 ### Features
 
+* **breeze:** design each voice once and clone it per piece ([e80eae0](https://github.com/Soleone/yap/commit/e80eae03969a83e2cf9962cfa86a0e6e16dc1523))
 * **settings:** allow cancelling a model load ([8b8c019](https://github.com/Soleone/yap/commit/8b8c0193e495a1646af420e34e94badd2e19b3b1))
 * **settings:** call the history setting Keep audio files ([871a58c](https://github.com/Soleone/yap/commit/871a58c4edf01f3401459161c401c28dd8e16461))
 * **settings:** name single-language Phonon models by their language ([973f0ef](https://github.com/Soleone/yap/commit/973f0ef6889b214ef3aaed8860dae0805fd3663d))

@@ -104,7 +104,7 @@ mod tests {
     let anonymous = fetch_failure("Unauthorized: you must be authenticated. (error_code=GatedRepo)");
     assert_eq!(
       fetch_error(german, anonymous),
-      "Phonon 40M is gated: save a Hugging Face token in the settings, then try again"
+      "Phonon 40M German is gated: save a Hugging Face token in the settings, then try again"
     );
     let offline = fetch_failure("connection refused");
     assert!(fetch_error(german, offline).ends_with("connection refused"));
