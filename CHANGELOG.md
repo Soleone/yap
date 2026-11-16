@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/Soleone/yap/compare/v0.1.5...v0.2.0) (2026-11-16)
+
+### Features
+
+* **settings:** allow cancelling a model load ([8b8c019](https://github.com/Soleone/yap/commit/8b8c0193e495a1646af420e34e94badd2e19b3b1))
+* **settings:** call the history setting Keep audio files ([871a58c](https://github.com/Soleone/yap/commit/871a58c4edf01f3401459161c401c28dd8e16461))
+* **settings:** name single-language Phonon models by their language ([973f0ef](https://github.com/Soleone/yap/commit/973f0ef6889b214ef3aaed8860dae0805fd3663d))
+* **settings:** open settings from a gear in a dialog with Voice, Languages, Library and General tabs ([71808ab](https://github.com/Soleone/yap/commit/71808ab6725f4da695751532896d61affedabad1))
+* **settings:** read language, model, voice and speed as one chain, and say when a model has one speed ([768ce85](https://github.com/Soleone/yap/commit/768ce85199cdcbb99e4f4e04fdfd2771180d96bc))
+* **settings:** show other languages as a list with an Add a language button ([96c9015](https://github.com/Soleone/yap/commit/96c90152cf70d2bf82fb6782a06819ab8b8fe14b))
+* **settings:** star voices to find them first in the voice lists ([70977dd](https://github.com/Soleone/yap/commit/70977dddb61c55f481193ee125846d5bad3593e7))
+
 ## [0.1.5](https://github.com/Soleone/yap/compare/v0.1.4...v0.1.5) (2026-11-16)
 
 ### Features
