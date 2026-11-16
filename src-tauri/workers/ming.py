@@ -13,7 +13,7 @@
 # url = "https://download.pytorch.org/whl/cu124"
 # explicit = true
 # ///
-"""Ming TTS 0.5B on CUDA, reading with its stock voices. Its inference code is a checkout, not a package, so it
+"""Ming TTS 0.5B on CUDA, reading with its stock voices or cloned ones. Its inference code is a checkout, not a package, so it
 comes from GitHub at a pinned commit."""
 
 import os
@@ -34,7 +34,16 @@ def load(source):
     tts = MingTTS(str(serve.hugging_face(source)), device=serve.cuda(), text_normalization=False)
 
     def say(request):
-        audio = tts.synthesize(task="IP", text=request["text"], controls={"ip": request["voice"]}, use_zero_spk_emb=True)
+        if "clone" in request:
+            # Ming reads only English in yap.
+            audio = tts.synthesize(
+                task="TTS", text=request["text"], language_id="English", prompt_wav_path=request["clone"]["audio"],
+                prompt_text=request["clone"]["text"], use_spk_emb=True,
+            )
+        else:
+            audio = tts.synthesize(
+                task="IP", text=request["text"], controls={"ip": request["voice"]}, use_zero_spk_emb=True
+            )
         return audio.squeeze(0).float().cpu().numpy(), tts.sample_rate
 
     return say

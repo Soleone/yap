@@ -1,3 +1,4 @@
+mod cloned;
 mod engine;
 mod grab;
 mod language;
@@ -79,6 +80,10 @@ pub fn run() {
       set_settings,
       models,
       voices,
+      stage_clip,
+      transcribe_clip,
+      add_cloned_voice,
+      delete_cloned_voice,
       preview,
       engine_status,
       prime,
@@ -113,13 +118,15 @@ pub fn run() {
       }
       let player = player::Player::start()?;
       let library = Arc::new(library::Library::open(&data)?);
-      let engine = Engine::start(player.clone(), library.clone(), store.clone(), models_dir);
+      let cloned = Arc::new(cloned::Cloned::open(&data));
+      let engine = Engine::start(player.clone(), library.clone(), store.clone(), cloned.clone(), models_dir);
       server::start(&data, engine.clone(), player.clone())?;
       popup::start(app.handle().clone(), player.clone(), store.clone());
       app.manage(player);
       app.manage(store);
       app.manage(engine);
       app.manage(library);
+      app.manage(cloned);
       tray(app.handle())?;
       if !std::env::args().any(|arg| arg == START_HIDDEN) {
         show(app.handle());
@@ -181,8 +188,38 @@ fn models() -> &'static [registry::Model] {
 
 /// The voices of `model`. Async so the first catalog download doesn't hold up the window.
 #[tauri::command]
-async fn voices(model: String) -> Result<Vec<VoiceInfo>, String> {
-  engine::voices(registry::model(&model))
+async fn voices(cloned: State<'_, Arc<cloned::Cloned>>, model: String) -> Result<Vec<VoiceInfo>, String> {
+  engine::voices(registry::model(&model), &cloned)
+}
+
+/// Keeps the clip a voice is about to be cloned from. The body is its 16-bit little-endian mono samples at 24 kHz.
+#[tauri::command]
+fn stage_clip(cloned: State<Arc<cloned::Cloned>>, request: tauri::ipc::Request) -> Result<(), String> {
+  match request.body() {
+    tauri::ipc::InvokeBody::Raw(pcm) => cloned.stage(pcm),
+    tauri::ipc::InvokeBody::Json(_) => Err("the clip comes as raw bytes".to_string()),
+  }
+}
+
+/// What the staged clip says, told in `model`, which clones. Takes as long as loading the model and, the first time,
+/// downloading the speech recognition model.
+#[tauri::command]
+async fn transcribe_clip(engine: State<'_, Engine>, model: String, keep: bool) -> Result<String, String> {
+  let engine = engine.inner().clone();
+  tauri::async_runtime::spawn_blocking(move || engine.transcribe(&model, keep))
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Adds the staged clip as the cloned voice `name`.
+#[tauri::command]
+fn add_cloned_voice(cloned: State<Arc<cloned::Cloned>>, name: String, transcript: String) -> Result<(), String> {
+  cloned.add(&name, &transcript)
+}
+
+#[tauri::command]
+fn delete_cloned_voice(cloned: State<Arc<cloned::Cloned>>, name: String) -> Result<(), String> {
+  cloned.delete(&name)
 }
 
 /// Reads a line in the main voice and speed of the settings, without keeping it in the library.

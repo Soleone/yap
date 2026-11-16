@@ -24,6 +24,8 @@ pub struct Model {
   pub gpu: bool,
   /// The speeds the slider offers, from slowest to fastest.
   pub speeds: &'static [Speed],
+  /// Reads in voices cloned from a recording, as well as its own.
+  pub clones: bool,
   /// Its voices; Phonon's come from the Phonon catalog instead.
   #[serde(skip)]
   pub voices: &'static [Voice],
@@ -94,6 +96,7 @@ const fn phonon_40m(
     gated: true,
     gpu: false,
     speeds: PHONON_SPEEDS,
+    clones: false,
     voices: &[],
   }
 }
@@ -114,6 +117,7 @@ pub const MODELS: &[Model] = &[
     gated: false,
     gpu: false,
     speeds: PHONON_SPEEDS,
+    clones: false,
     voices: &[],
   },
   phonon_40m(
@@ -163,6 +167,7 @@ pub const MODELS: &[Model] = &[
     gated: false,
     gpu: false,
     speeds: KOKORO_SPEEDS,
+    clones: false,
     voices: &[
       voice("af_heart", "en", "American woman, warm; Kokoro's best"),
       voice("af_bella", "en", "American woman, bright"),
@@ -197,6 +202,7 @@ pub const MODELS: &[Model] = &[
     gated: false,
     gpu: true,
     speeds: NORMAL_SPEED,
+    clones: true,
     voices: &[
       voice("US_Emma", "en", "American woman"),
       voice("UK_Charlotte", "en", "British woman"),
@@ -214,6 +220,7 @@ pub const MODELS: &[Model] = &[
     gated: false,
     gpu: true,
     speeds: NORMAL_SPEED,
+    clones: false,
     voices: &[
       voice("Ryan", "", "Man, English native"),
       voice("Aiden", "", "Man, English native"),
@@ -227,6 +234,21 @@ pub const MODELS: &[Model] = &[
     ],
   },
   Model {
+    id: "qwen3-tts-1.7b-base",
+    name: "Qwen3-TTS 1.7B Base",
+    source: "hf://Qwen/Qwen3-TTS-12Hz-1.7B-Base@fd4b254389122332181a7c3db7f27e918eec64e3",
+    runtime: Runtime::Python("qwen3"),
+    size_mb: 9_300,
+    languages: &["en", "zh", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
+    license: "Apache 2.0",
+    gated: false,
+    gpu: true,
+    speeds: NORMAL_SPEED,
+    clones: true,
+    // The Base model has no voices of its own; it reads only in cloned ones.
+    voices: &[],
+  },
+  Model {
     id: "breeze-tts-2",
     name: "Breeze TTS 2 3B",
     source: "hf://BreezeBlue/Breeze-TTS-2@3e28c5151381a722f1d8661b4118c298caa77aa4",
@@ -237,6 +259,7 @@ pub const MODELS: &[Model] = &[
     gated: false,
     gpu: true,
     speeds: NORMAL_SPEED,
+    clones: true,
     // Breeze designs each voice from its description, so the description is the voice.
     voices: &[
       voice(

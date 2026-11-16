@@ -12,7 +12,7 @@
 # url = "https://download.pytorch.org/whl/cu128"
 # explicit = true
 # ///
-"""Breeze TTS 2 on CUDA. Every voice is designed from its description. Its inference code is a checkout, not a
+"""Breeze TTS 2 on CUDA. Every voice of its own is designed from its description; cloned voices read from their clip. Its inference code is a checkout, not a
 package, so it comes from GitHub at a pinned commit."""
 
 import hashlib
@@ -73,11 +73,11 @@ def load(source):
         return path
 
     def say(request):
-        language = request["language"]
-        piece = {
-            "id": "piece", "text": request["text"], "speaker": "S0",
-            "ref_audio_path": str(reference(request["description"], language)), "ref_text": REFERENCE[language],
-        }
+        if "clone" in request:
+            audio, said = request["clone"]["audio"], request["clone"]["text"]
+        else:
+            audio, said = str(reference(request["description"], request["language"])), REFERENCE[request["language"]]
+        piece = {"id": "piece", "text": request["text"], "speaker": "S0", "ref_audio_path": audio, "ref_text": said}
         return speak(piece, guidance_scale=1.0), runtime.sample_rate
 
     return say

@@ -16,6 +16,12 @@ const SCRIPTS: &[(&str, &str)] = &[
   ("breeze.py", include_str!("../workers/breeze.py")),
 ];
 
+/// Who reads a piece: a voice of the model, or one cloned from a recording, read with what the recording says.
+pub enum Speaker<'a> {
+  Stock(&'a Voice),
+  Cloned { audio: PathBuf, transcript: String },
+}
+
 pub struct Worker {
   child: Arc<Mutex<Child>>,
   input: ChildStdin,
@@ -74,7 +80,7 @@ impl Worker {
 
   /// Waits until the model is loaded, or fails once the worker stopped.
   pub fn wait_ready(&mut self) -> Result<(), String> {
-    self.reply()
+    self.reply().map(drop)
   }
 
   /// Stops the worker from another thread, even while it loads.
@@ -83,17 +89,18 @@ impl Worker {
   }
 
   /// Makes one piece and returns its 24 kHz audio.
-  pub fn say(&mut self, text: &str, voice: &Voice, language: &str, speed: &str) -> Result<Vec<f32>, String> {
-    let request = serde_json::json!({
-      "text": text,
-      "voice": voice.name,
-      "description": voice.description,
-      "language": language,
-      "speed": speed,
-      "out": self.piece,
-    });
-    writeln!(self.input, "{request}").map_err(|_| self.died())?;
-    self.reply()?;
+  pub fn say(&mut self, text: &str, speaker: &Speaker, language: &str, speed: &str) -> Result<Vec<f32>, String> {
+    let mut request = serde_json::json!({ "text": text, "language": language, "speed": speed, "out": self.piece });
+    match speaker {
+      Speaker::Stock(voice) => {
+        request["voice"] = voice.name.into();
+        request["description"] = voice.description.into();
+      }
+      Speaker::Cloned { audio, transcript } => {
+        request["clone"] = serde_json::json!({ "audio": audio, "text": transcript })
+      }
+    }
+    self.ask(&request)?;
     let reader = hound::WavReader::open(&self.piece).map_err(|error| error.to_string())?;
     reader
       .into_samples::<i16>()
@@ -102,12 +109,24 @@ impl Worker {
       .map_err(|error| error.to_string())
   }
 
+  /// What the WAV at `audio` says, by a speech recognition model the worker downloads the first time, and deletes
+  /// again unless `keep`.
+  pub fn transcribe(&mut self, audio: &Path, keep: bool) -> Result<String, String> {
+    let reply = self.ask(&serde_json::json!({ "transcribe": audio, "keep": keep }))?;
+    Ok(reply["text"].as_str().unwrap_or_default().to_string())
+  }
+
   pub fn alive(&mut self) -> bool {
     matches!(lock(&self.child).try_wait(), Ok(None))
   }
 
+  fn ask(&mut self, request: &serde_json::Value) -> Result<serde_json::Value, String> {
+    writeln!(self.input, "{request}").map_err(|_| self.died())?;
+    self.reply()
+  }
+
   /// Waits for the script's next line: ready, done or an error.
-  fn reply(&mut self) -> Result<(), String> {
+  fn reply(&mut self) -> Result<serde_json::Value, String> {
     let mut line = String::new();
     if self.output.read_line(&mut line).map_err(|error| error.to_string())? == 0 {
       return Err(self.died());
@@ -115,7 +134,7 @@ impl Worker {
     let reply: serde_json::Value = serde_json::from_str(&line).map_err(|_| format!("unreadable reply: {line}"))?;
     match reply["error"].as_str() {
       Some(error) => Err(error.to_string()),
-      None => Ok(()),
+      None => Ok(reply),
     }
   }
 

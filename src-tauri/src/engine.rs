@@ -2,6 +2,7 @@
 //! the library. Reads and saved reads each have a thread and models of their own, so a long save never holds up a
 //! read.
 
+use crate::cloned::Cloned;
 use crate::language;
 use crate::library::{self, Library, Sound, Source};
 use crate::models_folder;
@@ -10,7 +11,7 @@ use crate::player::Player;
 use crate::registry::{self, Model as ModelInfo, Runtime, Speed};
 use crate::settings::{Settings, Store};
 use crate::text;
-use crate::worker::{Stopper, Worker};
+use crate::worker::{Speaker, Stopper, Worker};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
@@ -84,6 +85,7 @@ pub struct Engine {
   player: Player,
   library: Arc<Library>,
   settings: Store,
+  cloned: Arc<Cloned>,
   shown: Arc<Shown>,
   /// The last settings whose voices all got ready, which cancelling goes back to.
   settled: Arc<Mutex<Option<Settings>>>,
@@ -134,13 +136,15 @@ enum Job {
   /// Loads the models and primes the voices of every language in the settings ahead of the next read, and lets go of
   /// the rest.
   Prime,
+  /// Tells what the clip about to be cloned says, in a model that clones.
+  Transcribe { model: &'static ModelInfo, keep: bool, reply: Sender<Result<String, String>> },
 }
 
 impl Engine {
   /// Starts the reading thread, which loads the model and primes the voice in the settings right away so the first
   /// read starts at once, and the saving thread, which makes the reads saved for later, those from before a restart
   /// first, and prunes old reads.
-  pub fn start(player: Player, library: Arc<Library>, settings: Store, models: PathBuf) -> Engine {
+  pub fn start(player: Player, library: Arc<Library>, settings: Store, cloned: Arc<Cloned>, models: PathBuf) -> Engine {
     let (jobs, job_rx) = channel();
     let (saves, save_rx) = channel();
     let folder = Arc::new(Folder {
@@ -154,6 +158,7 @@ impl Engine {
       player,
       library,
       settings,
+      cloned,
       shown: Arc::default(),
       settled: Arc::default(),
       folder,
@@ -265,6 +270,15 @@ impl Engine {
     result
   }
 
+  /// What the clip staged for cloning says, told by speech recognition in `model`'s Python runtime. The recognition
+  /// model is deleted again after unless `keep`. Reads wait meanwhile.
+  pub fn transcribe(&self, model: &str, keep: bool) -> Result<String, String> {
+    let (reply, answer) = channel();
+    let job = Job::Transcribe { model: registry::model(model), keep, reply };
+    self.jobs.send(job).map_err(|_| "the engine stopped".to_string())?;
+    answer.recv().map_err(|_| "the engine stopped".to_string())?
+  }
+
   pub fn status(&self) -> Status {
     lock(&self.shown.status).clone()
   }
@@ -310,7 +324,7 @@ impl Engine {
   }
 
   fn read(self, jobs: Receiver<Job>) {
-    let mut maker = Maker::new(self.folder.clone(), "read", Some(self.shown.clone()));
+    let mut maker = Maker::new(self.folder.clone(), self.cloned.clone(), "read", Some(self.shown.clone()));
     for job in jobs {
       match job {
         Job::Speak { read, voice, pieces, from } => {
@@ -322,6 +336,9 @@ impl Engine {
           if maker.prime(settings_voices(&settings)) {
             *lock(&self.settled) = Some(settings);
           }
+        }
+        Job::Transcribe { model, keep, reply } => {
+          reply.send(maker.transcribe(model, &self.cloned.clip(), keep)).ok();
         }
       }
     }
@@ -364,7 +381,7 @@ impl Engine {
   /// Makes saved reads one at a time, oldest first, and prunes old reads every so often. Waits for `wake` when
   /// nothing is left.
   fn make_saved(self, wake: Receiver<()>) {
-    let mut maker = Maker::new(self.folder.clone(), "save", None);
+    let mut maker = Maker::new(self.folder.clone(), self.cloned.clone(), "save", None);
     let mut pruned: Option<Instant> = None;
     loop {
       if pruned.is_none_or(|at| at.elapsed() > PRUNE_EVERY) {
@@ -415,6 +432,7 @@ impl Engine {
 /// The models one thread uses, each loaded on first use.
 struct Maker {
   folder: Arc<Folder>,
+  cloned: Arc<Cloned>,
   /// Keeps the files of the reading and the saving workers apart.
   slot: &'static str,
   /// The settings window shows the reading model's status; the saving thread reports through the library instead.
@@ -445,8 +463,8 @@ enum Loader {
 }
 
 impl Maker {
-  fn new(folder: Arc<Folder>, slot: &'static str, shown: Option<Arc<Shown>>) -> Maker {
-    Maker { folder, slot, shown, loaded: Vec::new(), kept: Vec::new() }
+  fn new(folder: Arc<Folder>, cloned: Arc<Cloned>, slot: &'static str, shown: Option<Arc<Shown>>) -> Maker {
+    Maker { folder, cloned, slot, shown, loaded: Vec::new(), kept: Vec::new() }
   }
 
   fn set(&self, status: Status) {
@@ -541,6 +559,7 @@ impl Maker {
     piece: &str,
     push: &mut dyn FnMut(&[f32]) -> bool,
   ) -> Result<Option<Vec<f32>>, String> {
+    let cloned = self.cloned.clone();
     match self.ready(voice)? {
       Loader::Phonon(phonon) => {
         let session = phonon.session(&voice.name, voice.speed.control)?;
@@ -555,13 +574,27 @@ impl Maker {
         Ok(Some(audio))
       }
       Loader::Python(worker) => {
-        let info = voice
-          .model
-          .voice(&voice.name)
-          .ok_or_else(|| format!("{} has no voice {}; choose one in the settings", voice.model.name, voice.name))?;
-        let audio = worker.say(piece, info, voice.language, voice.speed.control)?;
+        let speaker = match voice.model.voice(&voice.name) {
+          Some(stock) => Speaker::Stock(stock),
+          None => {
+            let cloned = cloned.find(&voice.name).filter(|_| voice.model.clones);
+            let (audio, transcript) = cloned
+              .ok_or_else(|| format!("{} has no voice {}; choose one in the settings", voice.model.name, voice.name))?;
+            Speaker::Cloned { audio, transcript }
+          }
+        };
+        let audio = worker.say(piece, &speaker, voice.language, voice.speed.control)?;
         Ok(push(&audio).then_some(audio))
       }
+    }
+  }
+
+  /// What the WAV at `audio` says, in the Python runtime of `model`, loaded first when needed.
+  fn transcribe(&mut self, model: &'static ModelInfo, audio: &std::path::Path, keep: bool) -> Result<String, String> {
+    let voice = Voice::new(model.id, model.languages[0], String::new(), 1.0);
+    match self.ready(&voice)? {
+      Loader::Python(worker) => worker.transcribe(audio, keep),
+      Loader::Phonon(_) => Err(format!("{} can't clone voices", model.name)),
     }
   }
 }
@@ -604,22 +637,31 @@ fn hashes(pieces: &[(String, String)]) -> Vec<String> {
   pieces.iter().map(|(_, hash)| hash.clone()).collect()
 }
 
-/// The voices of `model` for the settings window. Phonon's come from its catalog, downloaded the first time.
-pub fn voices(model: &ModelInfo) -> Result<Vec<VoiceInfo>, String> {
-  match model.runtime {
-    Runtime::Phonon => phonon::voices(),
-    Runtime::Python(_) => Ok(
-      model
-        .voices
-        .iter()
-        .map(|voice| VoiceInfo {
-          name: voice.name.to_string(),
-          language: voice.language.to_string(),
-          description: voice.description.to_string(),
-        })
-        .collect(),
-    ),
+/// The voices of `model` for the settings window, the cloned ones last when it clones. Phonon's come from its catalog,
+/// downloaded the first time.
+pub fn voices(model: &ModelInfo, cloned: &Cloned) -> Result<Vec<VoiceInfo>, String> {
+  let mut voices = match model.runtime {
+    Runtime::Phonon => phonon::voices()?,
+    Runtime::Python(_) => model
+      .voices
+      .iter()
+      .map(|voice| VoiceInfo {
+        name: voice.name.to_string(),
+        language: voice.language.to_string(),
+        description: voice.description.to_string(),
+        cloned: false,
+      })
+      .collect(),
+  };
+  if model.clones {
+    voices.extend(cloned.list().into_iter().map(|voice| VoiceInfo {
+      name: voice.name,
+      language: String::new(),
+      description: "Cloned from your clip".to_string(),
+      cloned: true,
+    }));
   }
+  Ok(voices)
 }
 
 #[cfg(test)]

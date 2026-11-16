@@ -1,8 +1,12 @@
 """What every model script shares: the line protocol with yap, downloads, and writing pieces.
 
 yap runs `uv run --script <model>.py <source>`. Once the model is loaded the script prints {"ready": true}; then
-each line in is one piece, {"text", "voice", "description", "language", "speed", "out"}, and each line out is
-{"done": true} once `out` holds the piece as 24 kHz mono 16-bit WAV, or {"error": "..."}.
+each line in is one request and each line out its answer, or {"error": "..."}:
+
+- A piece, {"text", "language", "speed", "out"} with the model's own {"voice", "description"} or a cloned voice's
+  {"clone": {"audio", "text"}}, the WAV it was cloned from and what it says. {"done": true} once `out` holds the piece
+  as 24 kHz mono 16-bit WAV.
+- {"transcribe": path, "keep": bool}: {"done": true, "text": "..."}, what the 24 kHz WAV at `path` says.
 """
 
 import json
@@ -17,6 +21,8 @@ from pathlib import Path
 import numpy as np
 
 RATE = 24_000
+# Speech recognition for clips to clone from, loaded only for that, since it is rare.
+WHISPER = "hf://openai/whisper-large-v3-turbo@41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
 # Weights go in its `models` folder, Python code in `runtimes`.
 FOLDER = Path(os.environ["YAP_MODELS"])
 
@@ -43,6 +49,9 @@ def run(load):
     for line in sys.stdin:
         request = json.loads(line)
         try:
+            if "transcribe" in request:
+                _send({"done": True, "text": _transcribe(Path(request["transcribe"]), request["keep"])})
+                continue
             samples, rate = say(request)
             _write(Path(request["out"]), np.asarray(samples, dtype=np.float32).reshape(-1), rate)
             _send({"done": True})
@@ -64,6 +73,31 @@ def _write(path, samples, rate):
         file.setsampwidth(2)
         file.setframerate(RATE)
         file.writeframes((np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes())
+
+
+def _transcribe(path, keep):
+    """What the 24 kHz WAV at `path` says, by Whisper, which downloads the first time and is let go of after, and
+    deleted unless `keep`."""
+    import shutil
+
+    import torch
+    from scipy.signal import resample_poly
+    from transformers import pipeline
+
+    with wave.open(str(path)) as file:
+        samples = np.frombuffer(file.readframes(file.getnframes()), dtype="<i2").astype(np.float32) / 32768
+    folder = hugging_face(WHISPER)
+    recognizer = pipeline(
+        "automatic-speech-recognition", model=str(folder), device=cuda(), torch_dtype=torch.float16
+    )
+    try:
+        # Whisper hears at 16 kHz.
+        return recognizer({"raw": resample_poly(samples, 2, 3), "sampling_rate": 16_000})["text"].strip()
+    finally:
+        del recognizer
+        torch.cuda.empty_cache()
+        if not keep:
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def hugging_face(source):

@@ -12,7 +12,8 @@
 # url = "https://download.pytorch.org/whl/cu128"
 # explicit = true
 # ///
-"""Qwen3-TTS 1.7B CustomVoice on CUDA. Its dependencies match breeze.py's, so the two share one environment."""
+"""Qwen3-TTS 1.7B on CUDA: CustomVoice reads its own voices, Base cloned ones. Its dependencies match breeze.py's, so
+the two share one environment."""
 
 import serve
 import torch
@@ -31,9 +32,14 @@ def load(source):
     def say(request):
         # A fixed seed, so a piece sounds the same however often it is made.
         torch.manual_seed(SEED)
-        wavs, rate = tts.generate_custom_voice(
-            text=request["text"], speaker=request["voice"], language=LANGUAGES[request["language"]]
-        )
+        language = LANGUAGES[request["language"]]
+        if "clone" in request:
+            wavs, rate = tts.generate_voice_clone(
+                text=request["text"], language=language,
+                ref_audio=request["clone"]["audio"], ref_text=request["clone"]["text"],
+            )
+        else:
+            wavs, rate = tts.generate_custom_voice(text=request["text"], speaker=request["voice"], language=language)
         return wavs[0], rate
 
     return say

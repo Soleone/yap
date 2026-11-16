@@ -63,6 +63,7 @@ pub struct VoiceInfo {
   pub name: String,
   pub language: String,
   pub description: String,
+  pub cloned: bool,
 }
 
 /// Every voice in the Phonon catalog. Downloads the catalog the first time.
@@ -76,6 +77,7 @@ pub fn voices() -> Result<Vec<VoiceInfo>, String> {
         name: voice.name.clone(),
         language: voice.language.clone().unwrap_or_default(),
         description: voice.description.clone().unwrap_or_default(),
+        cloned: false,
       })
       .collect(),
   )
