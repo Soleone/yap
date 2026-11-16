@@ -90,14 +90,16 @@ Split into files by area (`spec/home.md`, `spec/settings.md`) once this one gets
 | `settings.folder`    | Choosing a models folder in the system's folder dialog | Models and their Python runtimes download there from the next start, which a restart button offers; ones already downloaded stay where they were. The default is the data folder                                                                              |
 | `settings.hotkey`    | Pressing the hotkey                                    | The selected text of the app in front is read, with that app, window title and page as its source; the clipboard is put back. With nothing selected, it stops reading. Off until set; on Wayland the window manager binds `wl-paste --primary \| yap` instead |
 | `settings.startup`   | Start with the system                                  | Yap starts in the tray when you log in                                                                                                                                                                                                                        |
+| `settings.version`   | Opening settings                                       | The app's version shows at the bottom                                                                                                                                                                                                                         |
 
 ## Install
 
-| Rule                | When                                 | Then                                                                                                                                                               |
-| ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `install.command`   | Installing on Windows                | One installer puts the app and the `yap` command in place and adds that folder to the user's PATH, so new terminals and Pluck find it                              |
-| `install.uninstall` | Uninstalling                         | The folder leaves PATH; models, pieces, the library and settings stay unless "Delete the application data" is checked                                              |
-| `install.python`    | Choosing a model that runs in Python | uv, which must be installed, downloads Python, the model's packages and its weights into the models folder the first time; without uv the model says how to get it |
+| Rule                | When                                                                         | Then                                                                                                                                                               |
+| ------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `install.command`   | Installing on Windows                                                        | One installer puts the app and the `yap` command in place and adds that folder to the user's PATH, so new terminals and Pluck find it                              |
+| `install.uninstall` | Uninstalling                                                                 | The folder leaves PATH; models, pieces, the library and settings stay unless "Delete the application data" is checked                                              |
+| `install.python`    | Choosing a model that runs in Python                                         | uv, which must be installed, downloads Python, the model's packages and its weights into the models folder the first time; without uv the model says how to get it |
+| `install.update`    | A newer release is on GitHub when the Yap window opens or comes to the front | A banner offers it; Update downloads, installs and restarts yap, and a failure offers Retry. Development builds never check                                        |
 
 ## Glossary
 

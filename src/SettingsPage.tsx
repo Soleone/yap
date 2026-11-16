@@ -28,6 +28,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Slider } from "@/components/ui/slider";
+import { version } from "../package.json";
 
 const LANGUAGES: Record<string, string> = {
   en: "English",
@@ -329,6 +330,7 @@ export function SettingsPage() {
           </FieldContent>
         </Field>
       </FieldGroup>
+      <p className="mt-6 text-xs text-muted-foreground">Yap {version}</p>
     </div>
   );
 }
