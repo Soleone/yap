@@ -12,6 +12,8 @@ pub struct Settings {
   /// Models list by language; a model that doesn't read it reads its own first language.
   pub language: String,
   pub voice: String,
+  /// Voices starred to find again, as `model/voice`; they list first wherever a voice is chosen.
+  pub favorite_voices: Vec<String>,
   /// Languages read in a model and voice of their own, told from the text of each read. Text too short to tell, and
   /// languages not here, read in the main ones above.
   pub other_languages: Vec<OtherLanguage>,
@@ -58,6 +60,7 @@ impl Default for Settings {
       model: registry::MODELS[0].id.to_string(),
       language: "en".to_string(),
       voice: "Miles".to_string(),
+      favorite_voices: Vec::new(),
       other_languages: Vec::new(),
       save_model: String::new(),
       save_voice: String::new(),

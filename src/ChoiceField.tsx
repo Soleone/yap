@@ -17,6 +17,7 @@ export function ChoiceField({
   options,
   onChange,
   description,
+  action,
 }: {
   id: string;
   label: string;
@@ -24,29 +25,34 @@ export function ChoiceField({
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
   description?: ReactNode;
+  /** A button beside the select, acting on the chosen option. */
+  action?: ReactNode;
 }) {
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select
-        name={id}
-        value={value}
-        onValueChange={(next) => next !== null && onChange(next)}
-        items={options}
-      >
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <div className="flex gap-2">
+        <Select
+          name={id}
+          value={value}
+          onValueChange={(next) => next !== null && onChange(next)}
+          items={options}
+        >
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {options.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {action}
+      </div>
       {description && <FieldDescription>{description}</FieldDescription>}
     </Field>
   );

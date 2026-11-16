@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Play, X } from "lucide-react";
+import { LoaderCircle, Play, Star, X } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
@@ -98,6 +98,13 @@ export function SettingsPage() {
     setSettings(updated);
     void bridge.setSettings(updated);
   };
+  const favorites = settings.favoriteVoices;
+  const toggleFavorite = (key: string) =>
+    change({
+      favoriteVoices: favorites.includes(key)
+        ? favorites.filter((each) => each !== key)
+        : [...favorites, key],
+    });
   const model = models.find(({ id }) => id === settings.model) ?? models[0];
   const language = model.languages.includes(settings.language)
     ? settings.language
@@ -164,6 +171,9 @@ export function SettingsPage() {
         <FieldSet>
           <VoiceField
             id="voice"
+            model={model.id}
+            favorites={favorites}
+            onFavorite={toggleFavorite}
             voices={voices[model.id] ?? []}
             language={language}
             value={settings.voice}
@@ -229,6 +239,8 @@ export function SettingsPage() {
               models={models.filter((each) => each.languages.includes(other.language))}
               downloaded={downloaded}
               voices={voices[other.model] ?? []}
+              favorites={favorites}
+              onFavorite={toggleFavorite}
               onModel={(id) => void chooseOtherModel(other, id)}
               onVoice={(voice) => changeOther(other.language, { voice })}
               onRemove={() => change({ otherLanguages: others.filter((each) => each !== other) })}
@@ -273,6 +285,9 @@ export function SettingsPage() {
           {saving && (
             <VoiceField
               id="save-voice"
+              model={saving.id}
+              favorites={favorites}
+              onFavorite={toggleFavorite}
               voices={voices[saving.id] ?? []}
               language={language}
               value={settings.saveVoice}
@@ -347,6 +362,8 @@ function OtherLanguageField({
   models,
   downloaded,
   voices,
+  favorites,
+  onFavorite,
   onModel,
   onVoice,
   onRemove,
@@ -355,6 +372,8 @@ function OtherLanguageField({
   models: Model[];
   downloaded: string[];
   voices: Voice[];
+  favorites: string[];
+  onFavorite: (key: string) => void;
   onModel: (id: string) => void;
   onVoice: (voice: string) => void;
   onRemove: () => void;
@@ -378,6 +397,9 @@ function OtherLanguageField({
       />
       <VoiceField
         id={`voice-${other.language}`}
+        model={model.id}
+        favorites={favorites}
+        onFavorite={onFavorite}
         voices={voices}
         language={other.language}
         value={other.voice}
@@ -387,31 +409,57 @@ function OtherLanguageField({
   );
 }
 
-/** A model's voices that read `language`, with the chosen one's description. */
+/** A model's voices that read `language`, favorites first, with the chosen one's description. */
 function VoiceField({
   id,
+  model,
   voices,
   language,
   value,
+  favorites,
   onChange,
+  onFavorite,
 }: {
   id: string;
+  model: string;
   voices: Voice[];
   language: string;
   value: string;
+  favorites: string[];
   onChange: (voice: string) => void;
+  onFavorite: (key: string) => void;
 }) {
   const options = voices.filter((voice) => reads(voice, language));
   if (!options.some(({ name }) => name === value))
     options.unshift({ name: value, language, description: "" });
+  const isFavorite = (name: string) => favorites.includes(`${model}/${name}`);
+  const sorted = [
+    ...options.filter(({ name }) => isFavorite(name)),
+    ...options.filter(({ name }) => !isFavorite(name)),
+  ];
+  const favorite = isFavorite(value);
   return (
     <ChoiceField
       id={id}
       label="Voice"
       value={value}
-      options={options.map(({ name }) => ({ value: name, label: name }))}
+      options={sorted.map(({ name }) => ({
+        value: name,
+        label: isFavorite(name) ? `★ ${name}` : name,
+      }))}
       onChange={onChange}
       description={options.find(({ name }) => name === value)?.description}
+      action={
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={favorite ? "Unfavorite voice" : "Favorite voice"}
+          aria-pressed={favorite}
+          onClick={() => onFavorite(`${model}/${value}`)}
+        >
+          <Star className={favorite ? "fill-current" : undefined} />
+        </Button>
+      }
     />
   );
 }

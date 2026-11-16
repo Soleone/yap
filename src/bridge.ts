@@ -28,6 +28,8 @@ export type Settings = {
   /** Models list by language; a model that doesn't read it reads its own first language. */
   language: string;
   voice: string;
+  /** Voices starred to find again, as `model/voice`; they list first wherever a voice is chosen. */
+  favoriteVoices: string[];
   /** Languages read in a model and voice of their own, told from the text of each read. */
   otherLanguages: OtherLanguage[];
   /** What `yap --save` makes reads in; an empty model means the reading model and voice. */
