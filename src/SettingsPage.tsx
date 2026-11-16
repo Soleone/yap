@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Play, Star, X } from "lucide-react";
+import { LoaderCircle, Play, Plus, Star, X } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ChoiceField } from "@/ChoiceField";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
@@ -27,6 +27,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { version } from "../package.json";
 
@@ -48,9 +56,6 @@ const KEEP_DAYS = [7, 30, 90, 365, 0];
 
 /** The saved-reads choice that means the reading model and voice. */
 const SAME = "same";
-
-/** The other-languages choice that adds nothing, shown until a language is picked. */
-const ADD = "add";
 
 /** Voice, speed, model, saved reads, history, popup and startup. Every change is saved at once. */
 export function SettingsPage() {
@@ -229,9 +234,14 @@ export function SettingsPage() {
         <FieldSet>
           <FieldLegend>Other languages</FieldLegend>
           <FieldDescription>
-            Yap tells the language of each read from its text and reads it in that language's voice.
-            Text too short to tell reads in {languageName(language)}.
+            Yap tells which of these languages a read is in and reads it in that language's voice.
+            Anything else, and text too short to tell, reads in {languageName(language)}.
           </FieldDescription>
+          {others.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              None yet, so everything reads in {languageName(language)}.
+            </p>
+          )}
           {others.map((other) => (
             <OtherLanguageField
               key={other.language}
@@ -247,16 +257,7 @@ export function SettingsPage() {
             />
           ))}
           {addable.length > 0 && (
-            <ChoiceField
-              id="add-language"
-              label="Add a language"
-              value={ADD}
-              options={[
-                { value: ADD, label: "Choose a language" },
-                ...addable.map((code) => ({ value: code, label: languageName(code) })),
-              ]}
-              onChange={(code) => code !== ADD && void addLanguage(code)}
-            />
+            <AddLanguage languages={addable} onAdd={(code) => void addLanguage(code)} />
           )}
         </FieldSet>
 
@@ -380,32 +381,62 @@ function OtherLanguageField({
 }) {
   const model = models.find(({ id }) => id === other.model) ?? models[0];
   return (
-    <FieldGroup>
-      <div className="flex items-center justify-between gap-2">
-        <FieldTitle>{languageName(other.language)}</FieldTitle>
-        <Button variant="ghost" size="icon-sm" aria-label="Remove" onClick={onRemove}>
-          <X />
-        </Button>
-      </div>
-      <ChoiceField
-        id={`model-${other.language}`}
-        label="Model"
-        value={model.id}
-        options={modelOptions(models, downloaded)}
-        onChange={onModel}
-        description={modelDescription(model, other.language)}
-      />
-      <VoiceField
-        id={`voice-${other.language}`}
-        model={model.id}
-        favorites={favorites}
-        onFavorite={onFavorite}
-        voices={voices}
-        language={other.language}
-        value={other.voice}
-        onChange={onVoice}
-      />
-    </FieldGroup>
+    <div className="rounded-lg border p-4">
+      <FieldGroup>
+        <div className="flex items-center justify-between gap-2">
+          <FieldTitle>{languageName(other.language)}</FieldTitle>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${languageName(other.language)}`}
+            onClick={onRemove}
+          >
+            <X />
+          </Button>
+        </div>
+        <ChoiceField
+          id={`model-${other.language}`}
+          label="Model"
+          value={model.id}
+          options={modelOptions(models, downloaded)}
+          onChange={onModel}
+          description={modelDescription(model, other.language)}
+        />
+        <VoiceField
+          id={`voice-${other.language}`}
+          model={model.id}
+          favorites={favorites}
+          onFavorite={onFavorite}
+          voices={voices}
+          language={other.language}
+          value={other.voice}
+          onChange={onVoice}
+        />
+      </FieldGroup>
+    </div>
+  );
+}
+
+/** Picks a language to add to the list; it shows as a button, not a setting of its own. */
+function AddLanguage({ languages, onAdd }: { languages: string[]; onAdd: (code: string) => void }) {
+  return (
+    <div>
+      <Select value={null} onValueChange={(code) => code !== null && onAdd(code)}>
+        <SelectTrigger aria-label="Add a language">
+          <Plus />
+          <SelectValue placeholder="Add a language" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {languages.map((code) => (
+              <SelectItem key={code} value={code}>
+                {languageName(code)}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
