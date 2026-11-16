@@ -105,7 +105,7 @@ const fn voice(name: &'static str, language: &'static str, description: &'static
 pub const MODELS: &[Model] = &[
   Model {
     id: "phonon-31m-en",
-    name: "Phonon 31M",
+    name: "Phonon 31M English",
     source: "hf://gradium/phonon-31m-en@92741c5b07d085ff840e26fea8ce43110b87852f",
     runtime: Runtime::Phonon,
     size_mb: 65,
@@ -118,7 +118,7 @@ pub const MODELS: &[Model] = &[
   },
   phonon_40m(
     "phonon-40m-en",
-    "Phonon 40M",
+    "Phonon 40M English",
     "hf://gradium/phonon-40m-en@bc7e8ae7e543a7a3e4604753e42fbda76ddf0781",
     &["en"],
   ),
@@ -130,25 +130,25 @@ pub const MODELS: &[Model] = &[
   ),
   phonon_40m(
     "phonon-40m-fr",
-    "Phonon 40M",
+    "Phonon 40M French",
     "hf://gradium/phonon-40m-fr@d91086970206b88efd2c88ca971d0628b5968f0f",
     &["fr"],
   ),
   phonon_40m(
     "phonon-40m-de",
-    "Phonon 40M",
+    "Phonon 40M German",
     "hf://gradium/phonon-40m-de@79cfc7b47fcfc0b666657b981eb366415023a862",
     &["de"],
   ),
   phonon_40m(
     "phonon-40m-es",
-    "Phonon 40M",
+    "Phonon 40M Spanish",
     "hf://gradium/phonon-40m-es@e5e052b26e31abd5918ade71d3135e69d51a66f8",
     &["es"],
   ),
   phonon_40m(
     "phonon-40m-pt",
-    "Phonon 40M",
+    "Phonon 40M Portuguese",
     "hf://gradium/phonon-40m-pt@4cbfd742a1555d60eb5399c6d296e9f2e07389e9",
     &["pt"],
   ),
