@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.5](https://github.com/Soleone/yap/compare/v0.1.4...v0.1.5) (2026-11-16)
+
+### Features
+
+* **settings:** move models to a new folder without restarting ([521d136](https://github.com/Soleone/yap/commit/521d136df3b8aaeb3c1e66833f954781715fcf7c))
+
 ## [0.1.4](https://github.com/Soleone/yap/compare/v0.1.3...v0.1.4) (2026-11-16)
 
 ### Features
