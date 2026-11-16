@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Soleone/yap/compare/v0.2.0...v0.2.1) (2026-11-16)
+
+### Features
+
+* **settings:** clone voices from a recording or audio file ([8489f5d](https://github.com/Soleone/yap/commit/8489f5d5da0b3750ac7baf6e9b672fc0518fcd56))
+* **voices:** clone voices from a recording or clip ([de6dd83](https://github.com/Soleone/yap/commit/de6dd831267e3fbfbc917fc6f4c80f16f67df32d))
+
 ## [0.2.0](https://github.com/Soleone/yap/compare/v0.1.5...v0.2.0) (2026-11-16)
 
 ### Features
