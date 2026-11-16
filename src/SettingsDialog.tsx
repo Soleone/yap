@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { cn } from "cn";
 import { ChoiceField } from "@/ChoiceField";
 import { CloneVoiceDialog } from "@/CloneVoiceDialog";
 import { hotkeyFromKeyDown, hotkeyKeys } from "@/hotkey";
@@ -90,15 +91,13 @@ export function SettingsDialog() {
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
         <SettingsTabs />
-        <DialogFooter>
-          <span className="text-xs text-muted-foreground">Yap {version}</span>
-        </DialogFooter>
       </SettingsDialogContent>
     </Dialog>
   );
 }
 
-/** Voice, languages, saved reads, history, popup and startup. Every change is saved at once. */
+/** Voice, languages, saved reads, history, popup and startup, over a footer with the model's status. Every change
+ * is saved at once. Nothing shows up or goes away above the fields, so they stay where they are. */
 function SettingsTabs() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [models, setModels] = useState<Model[]>([]);
@@ -167,6 +166,7 @@ function SettingsTabs() {
     (code) => code !== language && !others.some((other) => other.language === code),
   );
   const gated = models.filter(({ id, gated }) => gated && usedModels.includes(id));
+  const needsToken = gated.length > 0 && !tokenSaved;
 
   /** The main model when it reads `code`, else the first that does. */
   const modelFor = (code: string) =>
@@ -216,220 +216,231 @@ function SettingsTabs() {
   const speedIndex = closestIndex(speeds, settings.speed);
 
   return (
-    <Tabs defaultValue="voice">
-      <TabsList>
-        <TabsTrigger value="voice">Voice</TabsTrigger>
-        <TabsTrigger value="languages">Languages</TabsTrigger>
-        <TabsTrigger value="library">Library</TabsTrigger>
-        <TabsTrigger value="general">General</TabsTrigger>
-      </TabsList>
-      <ModelStatus status={status} onCancel={() => void bridge.cancelLoad().then(setSettings)} />
-      {gated.length > 0 && !tokenSaved && (
-        <TokenField models={gated} saved={false} onSaved={setTokenSaved} />
-      )}
-      <TabsContent value="voice" className="mt-3">
-        <FieldGroup>
-          <FieldSet>
-            <ChoiceField
-              id="language"
-              label="Language"
-              value={language}
-              options={languages.map((code) => ({ value: code, label: languageName(code) }))}
-              onChange={(code) => void chooseLanguage(code)}
+    <>
+      <Tabs defaultValue="voice">
+        <TabsList>
+          <TabsTrigger value="voice">Voice</TabsTrigger>
+          <TabsTrigger value="languages">Languages</TabsTrigger>
+          <TabsTrigger value="library">Library</TabsTrigger>
+          <TabsTrigger value="general">
+            General
+            {/* Always takes its place, so the tabs don't shift when it lights up. */}
+            <span
+              aria-label={needsToken ? "Needs a Hugging Face token" : undefined}
+              className={cn("size-1.5 rounded-full bg-primary", !needsToken && "invisible")}
             />
-            <ChoiceField
-              id="model"
-              label="Model"
-              value={model.id}
-              options={modelOptions(languageModels, downloaded)}
-              onChange={(id) => void chooseModel(id)}
-              description={modelDescription(model, language)}
-            />
-            <VoiceField
-              id="voice"
-              model={model}
-              onVoicesChanged={refreshVoices}
-              favorites={favorites}
-              onFavorite={toggleFavorite}
-              voices={voices[model.id] ?? []}
-              language={language}
-              value={settings.voice}
-              onChange={(voice) => change({ voice })}
-            />
-            {speeds.length > 1 ? (
-              <Field>
-                <FieldLabel htmlFor="speed">Speed {speeds[speedIndex].toFixed(1)}×</FieldLabel>
-                <Slider
-                  id="speed"
-                  min={0}
-                  max={speeds.length - 1}
-                  step={1}
-                  value={speedIndex}
-                  onValueChange={(index) => change({ speed: speeds[index as number] })}
-                />
-                <FieldDescription>
-                  Every model reads at its closest step to this, so it carries over when you switch.
-                </FieldDescription>
-              </Field>
-            ) : (
-              <Field>
-                <FieldLabel>Speed</FieldLabel>
-                <FieldDescription>
-                  {model.name} reads at one speed. Models with a speed control keep{" "}
-                  {settings.speed.toFixed(1)}×.
-                </FieldDescription>
-              </Field>
-            )}
-            <div>
-              <Button variant="outline" onClick={() => void bridge.preview()}>
-                <Play data-icon="inline-start" />
-                Preview
-              </Button>
-            </div>
-          </FieldSet>
-        </FieldGroup>
-      </TabsContent>
-
-      <TabsContent value="languages" className="mt-3">
-        <FieldSet>
-          <FieldLegend>Other languages</FieldLegend>
-          <FieldDescription>
-            Yap tells which of these languages a read is in and reads it in that language's voice.
-            Anything else, and text too short to tell, reads in {languageName(language)}.
-          </FieldDescription>
-          {others.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              None yet, so everything reads in {languageName(language)}.
-            </p>
-          )}
-          {others.map((other) => (
-            <OtherLanguageField
-              key={other.language}
-              other={other}
-              models={models.filter((each) => each.languages.includes(other.language))}
-              downloaded={downloaded}
-              voices={voices[other.model] ?? []}
-              favorites={favorites}
-              onFavorite={toggleFavorite}
-              onVoicesChanged={refreshVoices}
-              onModel={(id) => void chooseOtherModel(other, id)}
-              onVoice={(voice) => changeOther(other.language, { voice })}
-              onRemove={() => change({ otherLanguages: others.filter((each) => each !== other) })}
-            />
-          ))}
-          {addable.length > 0 && (
-            <AddLanguage languages={addable} onAdd={(code) => void addLanguage(code)} />
-          )}
-        </FieldSet>
-      </TabsContent>
-
-      <TabsContent value="library" className="mt-3">
-        <FieldGroup>
-          <FieldSet>
-            <ChoiceField
-              id="save-model"
-              label="Saved reads"
-              value={saving?.id ?? SAME}
-              options={[
-                { value: SAME, label: "Same as reading" },
-                ...modelOptions(languageModels, downloaded),
-              ]}
-              onChange={(id) => void chooseSaveModel(id)}
-              description={
-                saving ? (
-                  modelDescription(saving, language)
-                ) : (
-                  <>
-                    <code>yap --save "text"</code> makes the audio in the background without playing
-                    it; it plays from the library once ready.
-                  </>
-                )
-              }
-            />
-            {saving && (
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="voice" className="mt-3">
+          <FieldGroup>
+            <FieldSet>
+              <ChoiceField
+                id="language"
+                label="Language"
+                value={language}
+                options={languages.map((code) => ({ value: code, label: languageName(code) }))}
+                onChange={(code) => void chooseLanguage(code)}
+              />
+              <ChoiceField
+                id="model"
+                label="Model"
+                value={model.id}
+                options={modelOptions(languageModels, downloaded)}
+                onChange={(id) => void chooseModel(id)}
+                description={modelDescription(model, language)}
+              />
               <VoiceField
-                id="save-voice"
-                model={saving}
+                id="voice"
+                model={model}
                 onVoicesChanged={refreshVoices}
                 favorites={favorites}
                 onFavorite={toggleFavorite}
-                voices={voices[saving.id] ?? []}
+                voices={voices[model.id] ?? []}
                 language={language}
-                value={settings.saveVoice}
-                onChange={(saveVoice) => change({ saveVoice })}
+                value={settings.voice}
+                onChange={(voice) => change({ voice })}
               />
+              {speeds.length > 1 ? (
+                <Field>
+                  <FieldLabel htmlFor="speed">Speed {speeds[speedIndex].toFixed(1)}×</FieldLabel>
+                  <Slider
+                    id="speed"
+                    min={0}
+                    max={speeds.length - 1}
+                    step={1}
+                    value={speedIndex}
+                    onValueChange={(index) => change({ speed: speeds[index as number] })}
+                  />
+                  <FieldDescription>
+                    Every model reads at its closest step to this, so it carries over when you
+                    switch.
+                  </FieldDescription>
+                </Field>
+              ) : (
+                <Field>
+                  <FieldLabel>Speed</FieldLabel>
+                  <FieldDescription>
+                    {model.name} reads at one speed. Models with a speed control keep{" "}
+                    {settings.speed.toFixed(1)}×.
+                  </FieldDescription>
+                </Field>
+              )}
+              <div>
+                <Button variant="outline" onClick={() => void bridge.preview()}>
+                  <Play data-icon="inline-start" />
+                  Preview
+                </Button>
+              </div>
+            </FieldSet>
+          </FieldGroup>
+        </TabsContent>
+
+        <TabsContent value="languages" className="mt-3">
+          <FieldSet>
+            <FieldLegend>Other languages</FieldLegend>
+            <FieldDescription>
+              Yap tells which of these languages a read is in and reads it in that language's voice.
+              Anything else, and text too short to tell, reads in {languageName(language)}.
+            </FieldDescription>
+            {others.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                None yet, so everything reads in {languageName(language)}.
+              </p>
+            )}
+            {others.map((other) => (
+              <OtherLanguageField
+                key={other.language}
+                other={other}
+                models={models.filter((each) => each.languages.includes(other.language))}
+                downloaded={downloaded}
+                voices={voices[other.model] ?? []}
+                favorites={favorites}
+                onFavorite={toggleFavorite}
+                onVoicesChanged={refreshVoices}
+                onModel={(id) => void chooseOtherModel(other, id)}
+                onVoice={(voice) => changeOther(other.language, { voice })}
+                onRemove={() => change({ otherLanguages: others.filter((each) => each !== other) })}
+              />
+            ))}
+            {addable.length > 0 && (
+              <AddLanguage languages={addable} onAdd={(code) => void addLanguage(code)} />
             )}
           </FieldSet>
-          <FieldSeparator />
-          <ChoiceField
-            id="keep-days"
-            label="Keep audio files"
-            value={String(settings.keepDays)}
-            options={KEEP_DAYS.map((days) => ({
-              value: String(days),
-              label: days === 0 ? "Forever" : `For ${days} days`,
-            }))}
-            onChange={(days) => change({ keepDays: Number(days) })}
-            description="Counted from the last play. Reads kept in the library stay either way."
-          />
-        </FieldGroup>
-      </TabsContent>
+        </TabsContent>
 
-      <TabsContent value="general" className="mt-3">
-        <FieldGroup>
-          <FieldSet>
+        <TabsContent value="library" className="mt-3">
+          <FieldGroup>
+            <FieldSet>
+              <ChoiceField
+                id="save-model"
+                label="Saved reads"
+                value={saving?.id ?? SAME}
+                options={[
+                  { value: SAME, label: "Same as reading" },
+                  ...modelOptions(languageModels, downloaded),
+                ]}
+                onChange={(id) => void chooseSaveModel(id)}
+                description={
+                  saving ? (
+                    modelDescription(saving, language)
+                  ) : (
+                    <>
+                      <code>yap --save "text"</code> makes the audio in the background without
+                      playing it; it plays from the library once ready.
+                    </>
+                  )
+                }
+              />
+              {saving && (
+                <VoiceField
+                  id="save-voice"
+                  model={saving}
+                  onVoicesChanged={refreshVoices}
+                  favorites={favorites}
+                  onFavorite={toggleFavorite}
+                  voices={voices[saving.id] ?? []}
+                  language={language}
+                  value={settings.saveVoice}
+                  onChange={(saveVoice) => change({ saveVoice })}
+                />
+              )}
+            </FieldSet>
+            <FieldSeparator />
             <ChoiceField
-              id="popup"
-              label="While reading"
-              value={settings.popup}
-              options={[
-                { value: "subtitles", label: "Subtitles" },
-                { value: "minimal", label: "Minimal" },
-                { value: "off", label: "No popup" },
-              ]}
-              onChange={(popup) => change({ popup: popup as Settings["popup"] })}
+              id="keep-days"
+              label="Keep audio files"
+              value={String(settings.keepDays)}
+              options={KEEP_DAYS.map((days) => ({
+                value: String(days),
+                label: days === 0 ? "Forever" : `For ${days} days`,
+              }))}
+              onChange={(days) => change({ keepDays: Number(days) })}
+              description="Counted from the last play. Reads kept in the library stay either way."
             />
-            <ChoiceField
-              id="position"
-              label="Position"
-              value={settings.position}
-              options={[
-                { value: "bottom", label: "Bottom of the screen" },
-                { value: "top", label: "Top of the screen" },
-              ]}
-              onChange={(position) => change({ position: position as Settings["position"] })}
+          </FieldGroup>
+        </TabsContent>
+
+        <TabsContent value="general" className="mt-3">
+          <FieldGroup>
+            <FieldSet>
+              <ChoiceField
+                id="popup"
+                label="While reading"
+                value={settings.popup}
+                options={[
+                  { value: "subtitles", label: "Subtitles" },
+                  { value: "minimal", label: "Minimal" },
+                  { value: "off", label: "No popup" },
+                ]}
+                onChange={(popup) => change({ popup: popup as Settings["popup"] })}
+              />
+              <ChoiceField
+                id="position"
+                label="Position"
+                value={settings.position}
+                options={[
+                  { value: "bottom", label: "Bottom of the screen" },
+                  { value: "top", label: "Top of the screen" },
+                ]}
+                onChange={(position) => change({ position: position as Settings["position"] })}
+              />
+            </FieldSet>
+            <FieldSeparator />
+            <HotkeyField
+              hotkey={settings.hotkey}
+              onChange={(hotkey) => setSettings({ ...settings, hotkey })}
             />
-          </FieldSet>
-          <FieldSeparator />
-          <HotkeyField
-            hotkey={settings.hotkey}
-            onChange={(hotkey) => setSettings({ ...settings, hotkey })}
+            <FieldSeparator />
+            <Field orientation="horizontal">
+              <Checkbox
+                id="autostart"
+                checked={autostart}
+                onCheckedChange={(on) =>
+                  void (on ? enable() : disable()).then(() => setAutostart(on))
+                }
+              />
+              <FieldContent>
+                <FieldLabel htmlFor="autostart">Start with the system</FieldLabel>
+                <FieldDescription>Yap waits in the tray, with the voice ready.</FieldDescription>
+              </FieldContent>
+            </Field>
+            <FieldSeparator />
+            <ModelsFolderField />
+            <FieldSeparator />
+            <TokenField models={gated} saved={tokenSaved} onSaved={setTokenSaved} />
+          </FieldGroup>
+        </TabsContent>
+      </Tabs>
+      <DialogFooter>
+        <div className="flex min-h-7 flex-1 items-center gap-3">
+          <ModelStatus
+            status={status}
+            onCancel={() => void bridge.cancelLoad().then(setSettings)}
           />
-          <FieldSeparator />
-          <Field orientation="horizontal">
-            <Checkbox
-              id="autostart"
-              checked={autostart}
-              onCheckedChange={(on) =>
-                void (on ? enable() : disable()).then(() => setAutostart(on))
-              }
-            />
-            <FieldContent>
-              <FieldLabel htmlFor="autostart">Start with the system</FieldLabel>
-              <FieldDescription>Yap waits in the tray, with the voice ready.</FieldDescription>
-            </FieldContent>
-          </Field>
-          <FieldSeparator />
-          <ModelsFolderField />
-          {tokenSaved && (
-            <>
-              <FieldSeparator />
-              <TokenField models={gated} saved onSaved={setTokenSaved} />
-            </>
-          )}
-        </FieldGroup>
-      </TabsContent>
-    </Tabs>
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground">Yap {version}</span>
+        </div>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -756,8 +767,8 @@ function HotkeyField({ hotkey, onChange }: { hotkey: string; onChange: (hotkey: 
   );
 }
 
-/** Gated models download only with a token from an account that accepted their terms. Asked for above the tabs
- * while one is needed, and kept in General once saved. */
+/** Gated models download only with a token from an account that accepted their terms. `models` are the gated ones
+ * in use, whose terms to accept. */
 function TokenField({
   models,
   saved,
@@ -791,8 +802,8 @@ function TokenField({
         </Button>
       </div>
       <FieldDescription>
-        {saved ? (
-          "Downloads models that ask you to accept their terms. Paste another to replace it."
+        {saved || models.length === 0 ? (
+          "Downloads models that ask you to accept their terms first."
         ) : (
           <Linked
             text={`Accept the terms at ${models.map(({ id }) => `huggingface.co/gradium/${id}`).join(" and ")} while signed in, then paste a read token from huggingface.co/settings/tokens.`}
@@ -857,7 +868,7 @@ function ModelsFolderField() {
 function ModelStatus({ status, onCancel }: { status: EngineStatus; onCancel: () => void }) {
   if (status.state === "moving" || status.state === "loading")
     return (
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
           {status.state === "moving"
@@ -873,7 +884,7 @@ function ModelStatus({ status, onCancel }: { status: EngineStatus; onCancel: () 
     );
   if (status.state === "failed")
     return (
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start gap-2">
         <FieldError>
           <Linked text={status.error} />
         </FieldError>
