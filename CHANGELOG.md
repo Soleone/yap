@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2](https://github.com/Soleone/yap/compare/v0.2.1...v0.2.2) (2026-11-16)
+
+### Features
+
+* **settings:** move token field to General once a token is saved ([6e66f58](https://github.com/Soleone/yap/commit/6e66f589ce857d40a7e281145b163ba85474e891))
+
 ## [0.2.1](https://github.com/Soleone/yap/compare/v0.2.0...v0.2.1) (2026-11-16)
 
 ### Features
