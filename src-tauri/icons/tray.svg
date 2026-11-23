@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="224 240 576 576">
+  <mask id="bars">
+    <rect x="224" y="240" width="576" height="576" fill="#fff"/>
+    <g fill="#000"><rect x="368" y="416" width="64" height="112" rx="32"/><rect x="480" y="360" width="64" height="224" rx="32"/><rect x="592" y="416" width="64" height="112" rx="32"/></g>
+  </mask>
+  <path mask="url(#bars)" d="M352 240h320a128 128 0 0 1 128 128v208a128 128 0 0 1-128 128H480l-160 112v-112h32a128 128 0 0 1-128-128V368a128 128 0 0 1 128-128z" fill="#D4AF37"/>
+</svg>

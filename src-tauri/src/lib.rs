@@ -148,7 +148,7 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
   let open = MenuItem::with_id(app, "open", "Open Yap", true, None::<&str>)?;
   let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
   TrayIconBuilder::new()
-    .icon(app.default_window_icon().cloned().expect("the bundle has an icon"))
+    .icon(tauri::include_image!("icons/tray.png"))
     .tooltip("Yap")
     .menu(&Menu::with_items(app, &[&open, &quit])?)
     .show_menu_on_left_click(false)
