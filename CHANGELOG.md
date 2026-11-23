@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3](https://github.com/Soleone/yap/compare/v0.2.2...v0.2.3) (2026-11-23)
+
+### Bug Fixes
+
+* **tray:** tray icon is the bare gold glyph, filling the slot instead of a shrunken tile ([27eb108](https://github.com/Soleone/yap/commit/27eb10817ad6d4a5442bbfc33897d2ed2bbeeb95))
+
 ## [0.2.2](https://github.com/Soleone/yap/compare/v0.2.1...v0.2.2) (2026-11-16)
 
 ### Features
